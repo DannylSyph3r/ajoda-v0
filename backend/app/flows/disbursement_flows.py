@@ -192,6 +192,45 @@ async def handle_disbursement_flow(
         return
 
 
+async def handle_disbursement_history(
+    phone: str,
+    coop_id: UUID,
+    db: AsyncSession,
+) -> None:
+    """Exco-only: list the cooperative's recent disbursements with their Monnify
+    references and statuses (Phase 8 signal-mover — the bot side of the transfer
+    history view)."""
+    svc = WithdrawalService(db)
+    result = await svc.get_withdrawals(coop_id, page=1, page_size=5)
+    items = result.get("items", [])
+
+    if not items:
+        await send_text_message(
+            phone,
+            "No disbursements yet. When you withdraw from the pool, each transfer "
+            "and its reference will show up here.",
+        )
+        return
+
+    status_label = {
+        WithdrawalStatus.COMPLETED.value: "✅ Completed",
+        WithdrawalStatus.FAILED.value: "⚠️ Failed",
+        WithdrawalStatus.PROCESSING.value: "⏳ Processing",
+        WithdrawalStatus.PENDING_AUTHORIZATION.value: "🔐 Awaiting OTP",
+        WithdrawalStatus.INITIATED.value: "• Initiated",
+    }
+    lines = ["*Recent disbursements*", ""]
+    for w in items:
+        amount_naira = w["amount"] // 100
+        label = status_label.get(w["status"], w["status"])
+        lines.append(f"₦{amount_naira:,} — {w['reason']}")
+        lines.append(f"{label}")
+        if w.get("transfer_reference"):
+            lines.append(f"Ref: {w['transfer_reference']}")
+        lines.append("")
+    await send_text_message(phone, "\n".join(lines).strip())
+
+
 async def _search_banks(phone: str, svc: WithdrawalService, query: str) -> None:
     query = query.strip()
     if len(query) < 2:

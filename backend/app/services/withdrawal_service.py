@@ -52,6 +52,42 @@ def _mask_account(account_number: str | None) -> str:
     return "••••" + account_number[-4:]
 
 
+def humanize_failure(description: str, status: str) -> str:
+    """
+    Map Monnify's raw failure classes onto specific, exco-facing messages so a
+    live failure is diagnosable on the spot (Phase 8 graceful-failure UX). The
+    raw Monnify description is preserved as the fallback rather than discarded.
+    """
+    text = f"{description} {status}".lower()
+
+    if "insufficient" in text:
+        return (
+            "The disbursement wallet had insufficient funds for this transfer. "
+            "Fund the wallet and retry."
+        )
+    if "duplicate" in text:
+        return (
+            "A duplicate transfer was blocked. Wait a moment, then retry the same "
+            "withdrawal — a new transfer is never created for a retry."
+        )
+    if "reversed" in text:
+        return "The transfer was reversed; the funds were returned to the wallet."
+    if "expired" in text:
+        return "The transfer expired before it was authorized. Start a new withdrawal."
+    if any(k in text for k in ("timeout", "timed out", "not respond", "unavailable")):
+        return (
+            "The recipient's bank did not respond in time, so no money was sent. "
+            "Please retry the withdrawal."
+        )
+    if any(k in text for k in ("invalid account", "account name", "name mismatch", "not found")):
+        return (
+            "The recipient account could not be validated. Check the account number "
+            "and bank, then try again."
+        )
+
+    return description.strip() or "The transfer failed and no money was sent."
+
+
 class WithdrawalService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -444,7 +480,9 @@ class WithdrawalService:
         if our_status == WithdrawalStatus.COMPLETED:
             await self._complete_withdrawal(reference, monnify_reference)
         elif our_status == WithdrawalStatus.FAILED:
-            await self._fail_withdrawal(reference, description or monnify_status)
+            await self._fail_withdrawal(
+                reference, humanize_failure(description, monnify_status)
+            )
         else:
             # Non-terminal update (e.g. still processing) — advance from a pre-processing
             # state only; never regress a terminal one.

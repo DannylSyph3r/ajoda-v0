@@ -175,6 +175,10 @@ class AuthorizeDisbursementRequest(BaseModel):
     otp: str = Field(..., min_length=3, max_length=10)
 
 
+class WalletBalanceResponse(BaseModel):
+    available_kobo: int
+
+
 class DisbursementResponse(BaseModel):
     withdrawal_id: UUID
     status: str

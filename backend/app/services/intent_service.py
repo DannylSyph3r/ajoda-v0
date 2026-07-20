@@ -32,6 +32,7 @@ BUTTON_INTENT_MAP: dict[str, Intent] = {
     "disburse": Intent.DISBURSE,
     "confirm_disburse": Intent.CONFIRM_DISBURSE,
     "disburse_resend_otp": Intent.DISBURSE_RESEND_OTP,
+    "disbursement_history": Intent.DISBURSEMENT_HISTORY,
 }
 
 _BLOCKING_FLOWS = {

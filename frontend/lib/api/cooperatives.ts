@@ -12,6 +12,7 @@ import type {
   GenerateJoinCodesResponse,
   InsightResponse,
   BankItem,
+  WalletBalanceResponse,
   DisbursementResponse,
   InitiateDisbursementRequest,
   MemberListItem,
@@ -139,6 +140,15 @@ export async function getDisbursementBanks(
     `/api/cooperatives/${coopId}/disbursements/banks`,
   );
   return r.data as BankItem[];
+}
+
+export async function getWalletBalance(
+  coopId: string,
+): Promise<WalletBalanceResponse> {
+  const r = await apiClient.get(
+    `/api/cooperatives/${coopId}/disbursements/wallet-balance`,
+  );
+  return r.data as WalletBalanceResponse;
 }
 
 export async function verifyRecipient(

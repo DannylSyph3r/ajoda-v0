@@ -166,6 +166,10 @@ export interface PaginatedWithdrawals {
   has_more: boolean;
 }
 
+export interface WalletBalanceResponse {
+  available_kobo: number;
+}
+
 export interface BankItem {
   code: string;
   name: string;

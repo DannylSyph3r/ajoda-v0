@@ -15,6 +15,8 @@ Your job is to classify a user's message into one of the following intents and e
 - BROADCAST — Exco wants to send a broadcast message to all members
 - MEMBER_LOOKUP — Exco wants to look up a specific member's details
 - VIEW_MEMBERS — Exco wants to see the full list of all members in the cooperative (e.g. "show all members", "list members", "who are our members")
+- DISBURSE — Exco wants to withdraw or disburse pooled funds to a bank account (e.g. "withdraw", "make a payout", "send money from the pool", "disburse funds")
+- DISBURSEMENT_HISTORY — Exco wants to see past disbursements/withdrawals and their transfer references (e.g. "disbursement history", "past withdrawals", "recent payouts", "transfer history", "what have we paid out")
 - GREETING — User is saying hello, thanks, or making casual conversation with no specific task intent
 - UNKNOWN — The message does not match any known intent
 

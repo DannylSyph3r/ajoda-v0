@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useCoop } from "@/context/CoopContext";
-import { getWithdrawals } from "@/lib/api/cooperatives";
+import { getWithdrawals, getWalletBalance } from "@/lib/api/cooperatives";
 import { formatNaira, formatDateTime } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Status, type StatusKind } from "@/components/ui/Badge";
@@ -90,6 +90,13 @@ export default function WithdrawalsPage() {
     enabled: !!coopId,
   });
 
+  const { data: wallet, isLoading: walletLoading } = useQuery({
+    queryKey: ["coop", coopId, "wallet-balance"],
+    queryFn: () => getWalletBalance(coopId),
+    enabled: !!coopId,
+    staleTime: 30_000,
+  });
+
   const items = data?.items ?? [];
 
   return (
@@ -106,6 +113,25 @@ export default function WithdrawalsPage() {
         {activeCoop && (
           <RecordWithdrawalButton coopId={coopId} className="w-full sm:w-auto" />
         )}
+      </div>
+
+      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 rounded-md border border-border bg-card p-4 shadow-card sm:p-5">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
+            Disbursement wallet
+          </p>
+          {walletLoading ? (
+            <Skeleton className="mt-1 h-7 w-32" />
+          ) : (
+            <p className="tabular text-2xl font-[560] tracking-[-0.02em] text-foreground">
+              {wallet ? formatNaira(wallet.available_kobo) : "—"}
+            </p>
+          )}
+        </div>
+        <p className="max-w-[34ch] text-[12.5px] text-muted-foreground">
+          The Monnify money-out source, separate from the cooperative pool. A
+          transfer needs funds in both.
+        </p>
       </div>
 
       <div className="overflow-hidden rounded-md border border-border bg-card shadow-card">

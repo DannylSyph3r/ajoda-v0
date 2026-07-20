@@ -41,6 +41,7 @@ from app.schemas.cooperative import (
     UpdateSettingsRequest,
     VerifyRecipientRequest,
     VerifyRecipientResponse,
+    WalletBalanceResponse,
     WithdrawalListItem,
     BroadcastRequest,
     BroadcastResponse,
@@ -263,6 +264,21 @@ async def list_disbursement_banks(
     banks = await WithdrawalService(db).get_banks()
     return ApiResponse.success(
         data=[BankItem(**b) for b in banks], message="OK"
+    )
+
+
+@router.get("/{coop_id}/disbursements/wallet-balance")
+async def get_disbursement_wallet_balance(
+    coop_id: UUID,
+    _exco=Depends(require_coop_exco),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    """The Monnify disbursement wallet's available balance (the money-out source,
+    distinct from the cooperative pool). Exco-only."""
+    wallet = await WithdrawalService(db).get_wallet_balance()
+    return ApiResponse.success(
+        data=WalletBalanceResponse(available_kobo=wallet["available_kobo"]),
+        message="OK",
     )
 
 

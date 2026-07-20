@@ -6,10 +6,11 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import get_settings
-from app.core.database import engine
+from app.core.database import AsyncSessionFactory, engine
 from app.core.exceptions import AppException
 from app.routers import auth, cooperatives, members, payments, webhooks, internal, chatbot
 
@@ -122,5 +123,23 @@ app.include_router(chatbot.router, prefix="/api")
 
 
 @app.get("/health")
-async def health():
-    return {"status": "ok"}
+async def health() -> JSONResponse:
+    """
+    Liveness + readiness probe. Reports 200 when the database is reachable and
+    503 when it is not, so a Dokploy healthcheck and the post-deploy smoke test
+    can validate a deploy in one call.
+    """
+    db_ok = True
+    try:
+        async with AsyncSessionFactory() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception:
+        logger.exception("Health check DB probe failed")
+        db_ok = False
+
+    payload = {
+        "status": "ok" if db_ok else "degraded",
+        "database": "ok" if db_ok else "unreachable",
+        "version": app.version,
+    }
+    return JSONResponse(status_code=200 if db_ok else 503, content=payload)

@@ -120,7 +120,10 @@ async def dispatch_intent(
         handle_pay_period_selected,
         handle_register_flow,
     )
-    from app.flows.disbursement_flows import handle_disbursement_flow
+    from app.flows.disbursement_flows import (
+        handle_disbursement_flow,
+        handle_disbursement_history,
+    )
 
     if member is None:
         if intent == Intent.REGISTER or session.current_flow == "REGISTER":
@@ -324,6 +327,12 @@ async def dispatch_intent(
             await handle_disbursement_flow(
                 phone, session, coop_id, member, db, intent, entities
             )
+        else:
+            await _permission_denied(phone)
+
+    elif intent == Intent.DISBURSEMENT_HISTORY:
+        if is_exco:
+            await handle_disbursement_history(phone, coop_id, db)
         else:
             await _permission_denied(phone)
 
