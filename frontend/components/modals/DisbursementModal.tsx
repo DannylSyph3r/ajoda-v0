@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Modal } from "@/components/ui/Modal";
+import { Status, type StatusKind } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import {
@@ -195,9 +196,9 @@ export function DisbursementModal({
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-foreground">Reason</label>
             <textarea
-              className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm
+              className="w-full rounded-sm border border-border-strong bg-card px-3 py-2 text-sm
                          text-foreground placeholder:text-muted-foreground resize-none
-                         focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                         transition-colors focus:border-primary"
               rows={2}
               maxLength={500}
               placeholder="Describe the reason for this withdrawal"
@@ -220,8 +221,8 @@ export function DisbursementModal({
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-foreground">Bank</label>
             <select
-              className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm
-                         text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              className="w-full rounded-sm border border-border-strong bg-card px-3 py-2 text-sm
+                         text-foreground transition-colors focus:border-primary"
               value={bankCode}
               onChange={(e) => setBankCode(e.target.value)}
               required
@@ -247,22 +248,26 @@ export function DisbursementModal({
 
       {step === "confirm" && verified && (
         <div className="space-y-4">
-          <div className="rounded-lg border border-border bg-muted/40 p-4 text-sm space-y-2">
-            <p className="text-foreground">
-              You&apos;re about to send{" "}
-              <span className="font-semibold">
-                {formatNaira(Math.round(parseFloat(amountNaira) * 100))}
-              </span>{" "}
-              to
-            </p>
-            <p className="text-lg font-semibold text-foreground">
-              {verified.account_name}
-            </p>
-            <p className="text-muted-foreground">
-              {bankName} · {verified.account_masked}
-            </p>
-            <p className="pt-1 text-muted-foreground">Reason: {reason}</p>
+          <div className="flex items-center gap-3 rounded-sm border border-border-strong bg-muted p-3.5">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary-tint text-primary-ink">
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-foreground">
+                {verified.account_name}
+              </p>
+              <p className="text-[12.5px] text-muted-foreground">
+                {bankName} · {verified.account_masked} — verified by Monnify
+              </p>
+            </div>
           </div>
+          <dl className="space-y-2 text-sm">
+            <Row
+              label="Amount"
+              value={formatNaira(Math.round(parseFloat(amountNaira) * 100))}
+            />
+            <Row label="Reason" value={reason} />
+          </dl>
           <p className="text-xs text-muted-foreground">
             An OTP will be emailed to the account owner to authorize the transfer.
           </p>
@@ -291,7 +296,8 @@ export function DisbursementModal({
           <Input
             label="OTP"
             inputMode="numeric"
-            placeholder="e.g. 491763"
+            placeholder="••••••"
+            className="text-center font-mono text-base tracking-[0.3em]"
             value={otp}
             onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
             required
@@ -306,7 +312,7 @@ export function DisbursementModal({
 
       {step === "status" && disbursement && (
         <div className="space-y-4 text-sm">
-          <StatusBadge status={disbursement.status} />
+          <TransferProgress status={disbursement.status} />
           <dl className="space-y-2">
             <Row label="Amount" value={formatNaira(disbursement.amount)} />
             <Row
@@ -357,21 +363,69 @@ function Row({
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    COMPLETED: "bg-green-100 text-green-800",
-    FAILED: "bg-red-100 text-red-800",
-    PROCESSING: "bg-blue-100 text-blue-800",
-    PENDING_AUTHORIZATION: "bg-amber-100 text-amber-800",
-    INITIATED: "bg-gray-100 text-gray-800",
+const STATUS_META: Record<string, { kind: StatusKind; label: string }> = {
+  COMPLETED: { kind: "success", label: "Completed" },
+  FAILED: { kind: "danger", label: "Failed" },
+  PROCESSING: { kind: "warning", label: "Processing" },
+  PENDING_AUTHORIZATION: { kind: "info", label: "Awaiting OTP" },
+  INITIATED: { kind: "neutral", label: "Initiated" },
+};
+
+const PROGRESS_STEPS = [
+  { key: "INITIATED", label: "Transfer initiated" },
+  { key: "PENDING_AUTHORIZATION", label: "Awaiting OTP" },
+  { key: "PROCESSING", label: "Processing" },
+  { key: "COMPLETED", label: "Completed" },
+];
+
+function TransferProgress({ status }: { status: string }) {
+  const meta = STATUS_META[status] ?? {
+    kind: "neutral" as StatusKind,
+    label: status,
   };
+  if (status === "FAILED") {
+    return <Status kind="danger">Failed</Status>;
+  }
+  const currentIx = PROGRESS_STEPS.findIndex((st) => st.key === status);
   return (
-    <span
-      className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${
-        map[status] ?? "bg-gray-100 text-gray-800"
-      }`}
-    >
-      {status.replace(/_/g, " ")}
-    </span>
+    <div className="space-y-2.5">
+      <Status kind={meta.kind}>{meta.label}</Status>
+      <ol className="space-y-0.5">
+        {PROGRESS_STEPS.map((st, ix) => {
+          const done = currentIx > ix || status === "COMPLETED";
+          const now = st.key === status && status !== "COMPLETED";
+          return (
+            <li key={st.key} className="flex items-center gap-2.5 py-1">
+              <span
+                className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[11px] font-semibold ${
+                  done
+                    ? "border-primary bg-primary text-white"
+                    : now
+                      ? "border-primary bg-card text-primary"
+                      : "border-border-strong bg-card text-tertiary"
+                }`}
+              >
+                {done ? (
+                  <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                ) : (
+                  ix + 1
+                )}
+              </span>
+              <span
+                className={`text-[13px] ${
+                  now
+                    ? "font-semibold text-foreground"
+                    : done
+                      ? "text-muted-foreground"
+                      : "text-tertiary"
+                }`}
+              >
+                {st.label}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }

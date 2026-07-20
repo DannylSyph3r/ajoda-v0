@@ -37,12 +37,12 @@ export function TopBar({
   };
 
   return (
-    <header className="sticky top-0 z-20 flex min-h-14 shrink-0 items-center justify-between border-b border-border bg-white/95 px-3 backdrop-blur sm:px-4 lg:px-6">
+    <header className="sticky top-0 z-20 flex min-h-14 shrink-0 items-center justify-between border-b border-border bg-background/95 px-3 backdrop-blur sm:px-4 lg:px-6">
       <div className="flex min-w-0 items-center gap-2 sm:gap-3">
         <button
           type="button"
           onClick={onOpenMobileNav}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
           aria-label="Open navigation"
         >
           <Menu className="w-5 h-5" />
@@ -66,7 +66,7 @@ export function TopBar({
         <button
           type="button"
           onClick={handleLogout}
-          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:px-3"
+          className="inline-flex items-center gap-1.5 rounded-sm px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:px-3"
         >
           <LogOut className="w-4 h-4" />
           <span className="hidden sm:inline">Logout</span>

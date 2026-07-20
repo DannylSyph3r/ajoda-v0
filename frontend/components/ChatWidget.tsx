@@ -114,7 +114,7 @@ export function ChatWidget({ coopId }: ChatWidgetProps) {
             >
               <div
                 className={cn(
-                  "max-w-[88%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed sm:max-w-[80%] sm:px-4",
+                  "max-w-[88%] rounded-md px-3.5 py-2.5 text-sm leading-relaxed sm:max-w-[80%] sm:px-4",
                   msg.role === "user"
                     ? "bg-primary text-white rounded-br-sm"
                     : "bg-muted text-foreground rounded-bl-sm",
@@ -128,7 +128,7 @@ export function ChatWidget({ coopId }: ChatWidgetProps) {
 
         {loading && (
           <div className="flex justify-start">
-            <div className="bg-muted rounded-xl rounded-bl-sm px-4 py-3 flex items-center gap-1">
+            <div className="bg-muted rounded-md rounded-bl-sm px-4 py-3 flex items-center gap-1">
               {[0, 1, 2].map((i) => (
                 <span
                   key={i}
@@ -146,9 +146,9 @@ export function ChatWidget({ coopId }: ChatWidgetProps) {
       <div className="border-t border-border p-3 sm:p-4">
         <form onSubmit={handleSubmit} className="flex items-stretch gap-2 sm:items-end">
           <textarea
-            className="flex-1 rounded-lg border border-border bg-white px-3 py-2 text-sm
+            className="flex-1 rounded-lg border border-border-strong bg-card px-3 py-2 text-sm
                        text-foreground placeholder:text-muted-foreground resize-none
-                       focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary
+                       transition-colors focus:border-primary
                        transition-colors max-h-32 min-h-10 scrollbar-thin"
             rows={1}
             placeholder="Ask a question..."

@@ -91,15 +91,15 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-3xl space-y-5 sm:space-y-6">
-      <h1 className="text-xl font-semibold text-foreground">Settings</h1>
+      <h1 className="text-[23px] font-[620] tracking-[-0.015em] text-foreground">Settings</h1>
 
-      <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+      <div className="flex items-start gap-2 rounded-sm border border-border bg-muted px-4 py-3 text-sm text-warning">
         <Info className="w-4 h-4 shrink-0 mt-0.5" />
         Changes to contribution amount and frequency take effect from the next
         period onwards.
       </div>
 
-      <div className="space-y-4 rounded-xl border border-border bg-white p-4 sm:p-6">
+      <div className="space-y-4 rounded-md border border-border bg-card p-4 sm:p-6">
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
             label="Contribution Amount (₦)"
@@ -118,8 +118,8 @@ export default function SettingsPage() {
               Frequency
             </label>
             <select
-              className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm
-                       text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20
+              className="w-full rounded-lg border border-border-strong bg-card px-3 py-2 text-sm
+                       text-foreground transition-colors focus:border-primary
                        focus:border-primary transition-colors"
               value={form.frequency}
               onChange={(e) =>

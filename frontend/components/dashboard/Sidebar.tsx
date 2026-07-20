@@ -67,9 +67,9 @@ function CoopCard({
     <button
       onClick={onClick}
       className={cn(
-        "w-full text-left px-3 py-2.5 rounded-lg transition-colors border",
+        "w-full text-left px-3 py-2.5 rounded-sm transition-colors border",
         active
-          ? "bg-primary/5 border-primary/20"
+          ? "bg-primary-tint border-transparent"
           : "border-transparent hover:bg-muted",
       )}
     >
@@ -78,7 +78,7 @@ function CoopCard({
           <p
             className={cn(
               "text-sm font-medium truncate",
-              active ? "text-primary" : "text-foreground",
+              active ? "text-primary-ink" : "text-foreground",
             )}
           >
             {coop.name}
@@ -88,7 +88,7 @@ function CoopCard({
           </p>
         </div>
         {active && (
-          <ChevronRight className="w-3.5 h-3.5 text-primary shrink-0" />
+          <ChevronRight className="w-3.5 h-3.5 text-primary-ink shrink-0" />
         )}
       </div>
     </button>
@@ -109,7 +109,7 @@ function DashboardNavContent({
     exact ? pathname === href : pathname.startsWith(href);
 
   return (
-    <div className="flex h-full flex-col bg-white">
+    <div className="flex h-full flex-col bg-card">
       <div className="flex items-center justify-between border-b border-border px-4 py-4 sm:px-6 sm:py-5">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
@@ -121,7 +121,7 @@ function DashboardNavContent({
           <button
             type="button"
             onClick={onNavigate}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
             aria-label="Close navigation"
           >
             <X className="w-4 h-4" />
@@ -130,7 +130,7 @@ function DashboardNavContent({
       </div>
 
       <div className="border-b border-border px-3 py-4">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-2">
+        <p className="text-[11px] font-semibold text-tertiary uppercase tracking-wider px-3 mb-2">
           Cooperatives
         </p>
         <div className="space-y-1">
@@ -150,7 +150,7 @@ function DashboardNavContent({
           href="/dashboard/setup"
           onClick={onNavigate}
           className="mt-2 flex items-center gap-2 w-full px-3 py-2 text-sm text-muted-foreground
-                     hover:text-primary hover:bg-primary/5 rounded-lg transition-colors"
+                     hover:text-primary-ink hover:bg-primary-tint rounded-sm transition-colors"
         >
           <Plus className="w-4 h-4" />
           New Cooperative
@@ -165,10 +165,11 @@ function DashboardNavContent({
               key={href}
               href={href}
               onClick={onNavigate}
+              aria-current={active ? "page" : undefined}
               className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                "flex items-center gap-3 px-3 py-2 rounded-sm text-sm font-medium transition-colors",
                 active
-                  ? "bg-primary/5 text-primary"
+                  ? "bg-primary-tint text-primary-ink"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted",
               )}
             >
@@ -184,7 +185,7 @@ function DashboardNavContent({
 
 export function Sidebar() {
   return (
-    <aside className="hidden h-[100dvh] w-64 shrink-0 border-r border-border bg-white lg:flex lg:flex-col">
+    <aside className="hidden h-[100dvh] w-[232px] shrink-0 border-r border-border bg-card lg:flex lg:flex-col">
       <DashboardNavContent />
     </aside>
   );
@@ -204,7 +205,7 @@ export function MobileNavDrawer({
           <motion.button
             type="button"
             aria-label="Close navigation"
-            className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm lg:hidden"
+            className="fixed inset-0 z-30 bg-black/40 lg:hidden"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -212,7 +213,7 @@ export function MobileNavDrawer({
             onClick={onClose}
           />
           <motion.aside
-            className="fixed inset-y-0 left-0 z-40 w-[min(20rem,calc(100vw-1rem))] max-w-full border-r border-border bg-white shadow-xl lg:hidden"
+            className="fixed inset-y-0 left-0 z-40 w-[min(20rem,calc(100vw-1rem))] max-w-full border-r border-border bg-card shadow-overlay lg:hidden"
             initial={{ x: "-100%" }}
             animate={{ x: 0 }}
             exit={{ x: "-100%" }}

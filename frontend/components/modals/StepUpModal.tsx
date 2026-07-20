@@ -9,7 +9,7 @@ import { getStepUpToken } from "@/lib/api/auth";
 import type { StepUpAction } from "@/lib/api/types";
 
 const ACTION_LABELS: Record<StepUpAction, string> = {
-  WITHDRAWAL: "Record Withdrawal",
+  WITHDRAWAL: "New withdrawal",
   BROADCAST: "Send Broadcast",
   SETTINGS: "Update Settings",
 };
@@ -73,6 +73,7 @@ export function StepUpModal({
             maxLength={6}
             icon={<Lock className="w-4 h-4" />}
             placeholder="Enter your PIN"
+            className="font-mono tracking-[0.2em]"
             value={pin}
             onChange={(e) => {
               setPin(e.target.value.replace(/\D/g, ""));

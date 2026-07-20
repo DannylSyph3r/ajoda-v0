@@ -28,10 +28,10 @@ function ContributionSummaryCard({
   };
 }) {
   return (
-    <article className="space-y-3 rounded-xl border border-border bg-white p-4">
+    <article className="space-y-3 rounded-md border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
             #{index + 1}
           </p>
           <h2 className="truncate text-sm font-semibold text-foreground">
@@ -42,7 +42,7 @@ function ContributionSummaryCard({
       </div>
       <dl className="grid grid-cols-2 gap-3 text-sm">
         <div className="space-y-1">
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
             Total
           </dt>
           <dd className="font-medium text-foreground">
@@ -50,19 +50,19 @@ function ContributionSummaryCard({
           </dd>
         </div>
         <div className="space-y-1">
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
             Paid
           </dt>
-          <dd className="font-medium text-green-600">{row.periods_paid}</dd>
+          <dd className="font-medium text-success">{row.periods_paid}</dd>
         </div>
         <div className="space-y-1">
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
             Missed
           </dt>
-          <dd className="font-medium text-red-600">{row.periods_missed}</dd>
+          <dd className="font-medium text-destructive">{row.periods_missed}</dd>
         </div>
         <div className="space-y-1">
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
             Last Payment
           </dt>
           <dd className="text-foreground">{formatDate(row.last_payment_date)}</dd>
@@ -83,7 +83,7 @@ function PeriodStatusCard({
   };
 }) {
   return (
-    <article className="space-y-3 rounded-xl border border-border bg-white p-4">
+    <article className="space-y-3 rounded-md border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
         <h2 className="min-w-0 truncate text-sm font-semibold text-foreground">
           {row.full_name}
@@ -93,7 +93,7 @@ function PeriodStatusCard({
         </Badge>
       </div>
       <div className="space-y-1 text-sm">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
           Amount
         </p>
         <p className="font-medium text-foreground">
@@ -132,12 +132,12 @@ export default function HistoryPage() {
   return (
     <div className="space-y-5 sm:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-xl font-semibold text-foreground">
+        <h1 className="text-[23px] font-[620] tracking-[-0.015em] text-foreground">
           Contribution History
         </h1>
         <select
-          className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm text-foreground
-                     focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary
+          className="w-full rounded-lg border border-border-strong bg-card px-3 py-2 text-sm text-foreground
+                     transition-colors focus:border-primary
                      transition-colors sm:w-auto sm:min-w-72"
           value={selectedPeriodId}
           onChange={(e) => setSelectedPeriodId(e.target.value)}
@@ -152,13 +152,13 @@ export default function HistoryPage() {
         </select>
       </div>
 
-      <div className="bg-white rounded-xl border border-border overflow-hidden">
+      <div className="bg-card rounded-md border border-border overflow-hidden">
         <div className="space-y-3 p-4 md:hidden">
           {isLoading
             ? Array.from({ length: 4 }).map((_, i) => (
                 <div
                   key={i}
-                  className="space-y-3 rounded-xl border border-border bg-white p-4"
+                  className="space-y-3 rounded-md border border-border bg-card p-4"
                 >
                   <Skeleton className="h-5 w-32" />
                   <div className="grid grid-cols-2 gap-3">
@@ -183,7 +183,7 @@ export default function HistoryPage() {
           {!isLoading &&
             ((selectedPeriodId === "all" && summary.length === 0) ||
               (selectedPeriodId !== "all" && periodStatus.length === 0)) && (
-              <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+              <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
                 No contribution records found.
               </div>
             )}
@@ -193,7 +193,7 @@ export default function HistoryPage() {
           {selectedPeriodId === "all" ? (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border bg-muted/50">
+                <tr className="border-b border-border bg-muted">
                   {[
                     "#",
                     "Member",
@@ -205,7 +205,7 @@ export default function HistoryPage() {
                   ].map((h) => (
                     <th
                       key={h}
-                      className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider"
+                      className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.05em] text-tertiary"
                     >
                       {h}
                     </th>
@@ -226,7 +226,7 @@ export default function HistoryPage() {
                   : summary.map((row, idx) => (
                       <tr
                         key={row.member_id}
-                        className="hover:bg-muted/30 transition-colors"
+                        className="hover:bg-muted transition-colors"
                       >
                         <td className="px-4 py-3 text-muted-foreground font-mono text-xs">
                           {idx + 1}
@@ -237,10 +237,10 @@ export default function HistoryPage() {
                         <td className="px-4 py-3 text-foreground">
                           {formatNaira(row.total_contributed)}
                         </td>
-                        <td className="px-4 py-3 text-green-600 font-medium">
+                        <td className="px-4 py-3 text-success font-medium">
                           {row.periods_paid}
                         </td>
-                        <td className="px-4 py-3 text-red-600 font-medium">
+                        <td className="px-4 py-3 text-destructive font-medium">
                           {row.periods_missed}
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">
@@ -256,11 +256,11 @@ export default function HistoryPage() {
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border bg-muted/50">
+                <tr className="border-b border-border bg-muted">
                   {["Member", "Amount", "Status"].map((h) => (
                     <th
                       key={h}
-                      className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider"
+                      className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.05em] text-tertiary"
                     >
                       {h}
                     </th>
@@ -281,7 +281,7 @@ export default function HistoryPage() {
                   : periodStatus.map((row) => (
                       <tr
                         key={row.member_id}
-                        className="hover:bg-muted/30 transition-colors"
+                        className="hover:bg-muted transition-colors"
                       >
                         <td className="px-4 py-3 font-medium text-foreground">
                           {row.full_name}

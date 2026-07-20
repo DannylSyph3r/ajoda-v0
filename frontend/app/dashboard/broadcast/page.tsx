@@ -52,15 +52,15 @@ export default function BroadcastPage() {
 
   return (
     <div className="max-w-3xl space-y-5 sm:space-y-6">
-      <h1 className="text-xl font-semibold text-foreground">Broadcast</h1>
+      <h1 className="text-[23px] font-[620] tracking-[-0.015em] text-foreground">Broadcast</h1>
 
-      <div className="space-y-4 rounded-xl border border-border bg-white p-4 sm:p-6">
+      <div className="space-y-4 rounded-md border border-border bg-card p-4 sm:p-6">
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-foreground">Message</label>
           <textarea
-            className="w-full rounded-lg border border-border bg-white px-3 py-2 text-sm
+            className="w-full rounded-lg border border-border-strong bg-card px-3 py-2 text-sm
                        text-foreground placeholder:text-muted-foreground resize-none
-                       focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary
+                       transition-colors focus:border-primary
                        transition-colors"
             rows={5}
             maxLength={1000}

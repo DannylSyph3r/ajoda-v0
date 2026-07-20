@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowDownCircle } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { StepUpModal } from "@/components/modals/StepUpModal";
 import { DisbursementModal } from "@/components/modals/DisbursementModal";
@@ -36,13 +36,9 @@ export function RecordWithdrawalButton({
 
   return (
     <>
-      <Button
-        variant="outline"
-        onClick={() => setStepUpOpen(true)}
-        className={cn(className)}
-      >
-        <ArrowDownCircle className="w-4 h-4" />
-        Record Withdrawal
+      <Button onClick={() => setStepUpOpen(true)} className={cn(className)}>
+        <Plus className="w-4 h-4" />
+        New withdrawal
       </Button>
 
       <StepUpModal

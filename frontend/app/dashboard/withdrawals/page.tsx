@@ -5,62 +5,60 @@ import { useCoop } from "@/context/CoopContext";
 import { getWithdrawals } from "@/lib/api/cooperatives";
 import { formatNaira, formatDateTime } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Status, type StatusKind } from "@/components/ui/Badge";
 import { RecordWithdrawalButton } from "@/components/dashboard/RecordWithdrawalButton";
 import type { WithdrawalItem } from "@/lib/api/types";
 
-const STATUS_STYLES: Record<string, string> = {
-  COMPLETED: "bg-green-100 text-green-800",
-  FAILED: "bg-red-100 text-red-800",
-  PROCESSING: "bg-blue-100 text-blue-800",
-  PENDING_AUTHORIZATION: "bg-amber-100 text-amber-800",
-  INITIATED: "bg-gray-100 text-gray-800",
+const STATUS_MAP: Record<string, { kind: StatusKind; label: string }> = {
+  COMPLETED: { kind: "success", label: "Completed" },
+  FAILED: { kind: "danger", label: "Failed" },
+  PROCESSING: { kind: "warning", label: "Processing" },
+  PENDING_AUTHORIZATION: { kind: "info", label: "Awaiting OTP" },
+  INITIATED: { kind: "neutral", label: "Initiated" },
 };
 
-function StatusPill({ status }: { status: string }) {
-  return (
-    <span
-      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-        STATUS_STYLES[status] ?? "bg-gray-100 text-gray-800"
-      }`}
-    >
-      {status.replace(/_/g, " ")}
-    </span>
-  );
+function WithdrawalStatus({ status }: { status: string }) {
+  const s = STATUS_MAP[status] ?? { kind: "neutral" as StatusKind, label: status };
+  return <Status kind={s.kind}>{s.label}</Status>;
+}
+
+function truncateRef(ref: string) {
+  return ref.length > 22 ? `${ref.slice(0, 14)}…${ref.slice(-6)}` : ref;
 }
 
 function WithdrawalCard({ withdrawal }: { withdrawal: WithdrawalItem }) {
   return (
-    <article className="space-y-3 rounded-xl border border-border bg-white p-4">
+    <article className="space-y-3 rounded-md border border-border bg-card p-4 shadow-card">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-foreground">
+          <h2 className="tabular text-[15px] font-[560] tracking-[-0.015em] text-foreground">
             {formatNaira(withdrawal.amount)}
           </h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             {formatDateTime(withdrawal.created_at)}
           </p>
         </div>
-        <StatusPill status={withdrawal.status} />
+        <WithdrawalStatus status={withdrawal.status} />
       </div>
       <dl className="space-y-3 text-sm">
         <div className="space-y-1">
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
             Reason
           </dt>
           <dd className="text-foreground">{withdrawal.reason}</dd>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1">
-            <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Authorized By
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
+              Authorized by
             </dt>
             <dd className="text-foreground">{withdrawal.authorized_by_name}</dd>
           </div>
           <div className="space-y-1">
-            <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Pool After
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
+              Pool after
             </dt>
-            <dd className="font-medium text-foreground">
+            <dd className="tabular font-medium text-foreground">
               {withdrawal.pool_balance_after != null
                 ? formatNaira(withdrawal.pool_balance_after)
                 : "—"}
@@ -69,10 +67,10 @@ function WithdrawalCard({ withdrawal }: { withdrawal: WithdrawalItem }) {
         </div>
         {withdrawal.transfer_reference && (
           <div className="space-y-1">
-            <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
               Reference
             </dt>
-            <dd className="break-all font-mono text-xs text-foreground">
+            <dd className="break-all font-mono text-xs text-muted-foreground">
               {withdrawal.transfer_reference}
             </dd>
           </div>
@@ -97,22 +95,26 @@ export default function WithdrawalsPage() {
   return (
     <div className="space-y-5 sm:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <h1 className="text-xl font-semibold text-foreground">Withdrawals</h1>
+        <div>
+          <h1 className="text-[23px] font-[620] tracking-[-0.015em] text-balance text-foreground">
+            Withdrawals
+          </h1>
+          <p className="text-[13.5px] text-muted-foreground">
+            Move pooled funds out to a verified bank account.
+          </p>
+        </div>
         {activeCoop && (
-          <RecordWithdrawalButton
-            coopId={coopId}
-            className="w-full sm:w-auto"
-          />
+          <RecordWithdrawalButton coopId={coopId} className="w-full sm:w-auto" />
         )}
       </div>
 
-      <div className="bg-white rounded-xl border border-border overflow-hidden">
+      <div className="overflow-hidden rounded-md border border-border bg-card shadow-card">
         <div className="space-y-3 p-4 md:hidden">
           {isLoading
             ? Array.from({ length: 4 }).map((_, i) => (
                 <div
                   key={i}
-                  className="space-y-3 rounded-xl border border-border bg-white p-4"
+                  className="space-y-3 rounded-md border border-border bg-card p-4"
                 >
                   <Skeleton className="h-5 w-28" />
                   <Skeleton className="h-4 w-40" />
@@ -123,8 +125,14 @@ export default function WithdrawalsPage() {
                 <WithdrawalCard key={withdrawal.id} withdrawal={withdrawal} />
               ))}
           {!isLoading && items.length === 0 && (
-            <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-              No withdrawals recorded.
+            <div className="rounded-md border border-dashed border-border-strong px-4 py-10 text-center">
+              <p className="text-sm font-medium text-foreground">
+                No withdrawals yet
+              </p>
+              <p className="mt-1 text-[13px] text-muted-foreground">
+                When you disburse from the pool, every transfer and its Monnify
+                reference will be recorded here.
+              </p>
             </div>
           )}
         </div>
@@ -132,22 +140,17 @@ export default function WithdrawalsPage() {
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border bg-muted/50">
-                {[
-                  "Date",
-                  "Amount (₦)",
-                  "Reason",
-                  "Authorized By",
-                  "Status",
-                  "Pool After",
-                ].map((h) => (
-                  <th
-                    key={h}
-                    className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider"
-                  >
-                    {h}
-                  </th>
-                ))}
+              <tr className="border-b border-border bg-muted">
+                {["Date", "Amount", "Reason", "Authorized by", "Status", "Reference"].map(
+                  (h) => (
+                    <th
+                      key={h}
+                      className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-[0.05em] text-tertiary"
+                    >
+                      {h}
+                    </th>
+                  ),
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -162,18 +165,15 @@ export default function WithdrawalsPage() {
                     </tr>
                   ))
                 : items.map((w) => (
-                    <tr
-                      key={w.id}
-                      className="hover:bg-muted/30 transition-colors"
-                    >
-                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                    <tr key={w.id} className="transition-colors hover:bg-muted">
+                      <td className="tabular whitespace-nowrap px-4 py-3 text-muted-foreground">
                         {formatDateTime(w.created_at)}
                       </td>
-                      <td className="px-4 py-3 font-medium text-foreground">
+                      <td className="tabular px-4 py-3 font-[560] tracking-[-0.015em] text-foreground">
                         {formatNaira(w.amount)}
                       </td>
                       <td
-                        className="px-4 py-3 text-foreground max-w-xs truncate"
+                        className="max-w-xs truncate px-4 py-3 text-foreground"
                         title={w.reason}
                       >
                         {w.reason}
@@ -182,22 +182,32 @@ export default function WithdrawalsPage() {
                         {w.authorized_by_name}
                       </td>
                       <td className="px-4 py-3">
-                        <StatusPill status={w.status} />
+                        <WithdrawalStatus status={w.status} />
                       </td>
-                      <td className="px-4 py-3 text-foreground">
-                        {w.pool_balance_after != null
-                          ? formatNaira(w.pool_balance_after)
-                          : "—"}
+                      <td className="px-4 py-3">
+                        {w.transfer_reference ? (
+                          <span
+                            className="font-mono text-xs text-muted-foreground"
+                            title={w.transfer_reference}
+                          >
+                            {truncateRef(w.transfer_reference)}
+                          </span>
+                        ) : (
+                          <span className="text-tertiary">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}
               {!isLoading && items.length === 0 && (
                 <tr>
-                  <td
-                    colSpan={6}
-                    className="px-4 py-8 text-center text-muted-foreground text-sm"
-                  >
-                    No withdrawals recorded.
+                  <td colSpan={6} className="px-4 py-12 text-center">
+                    <p className="text-sm font-medium text-foreground">
+                      No withdrawals yet
+                    </p>
+                    <p className="mt-1 text-[13px] text-muted-foreground">
+                      When you disburse from the pool, every transfer and its
+                      Monnify reference will be recorded here.
+                    </p>
                   </td>
                 </tr>
               )}

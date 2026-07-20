@@ -38,10 +38,10 @@ export default function LoginPage() {
         className="w-full max-w-sm"
       >
         <div className="mb-8 text-center">
-          <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-primary mb-3">
+          <div className="inline-flex items-center justify-center w-10 h-10 rounded-md bg-primary mb-3">
             <span className="text-white font-bold">A</span>
           </div>
-          <h1 className="text-xl font-semibold text-foreground">
+          <h1 className="text-[23px] font-[620] tracking-[-0.015em] text-foreground">
             Welcome back
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -49,7 +49,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <div className="bg-white rounded-xl border border-border shadow-sm p-6 space-y-4">
+        <div className="bg-card rounded-md border border-border shadow-sm p-6 space-y-4">
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
               label="Phone Number"

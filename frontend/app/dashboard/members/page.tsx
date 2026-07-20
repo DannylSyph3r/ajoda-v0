@@ -30,7 +30,7 @@ function CopyButton({ text }: { text: string }) {
     <button
       type="button"
       onClick={copy}
-      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-white hover:text-foreground"
+      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
     >
       {copied ? (
         <Check className="h-3.5 w-3.5 text-success" />
@@ -47,7 +47,7 @@ function JoinCodeRoleBadge({ role }: { role: string }) {
   return (
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-        isExco ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
+        isExco ? "bg-primary-tint text-primary-ink" : "bg-muted text-muted-foreground"
       }`}
     >
       {isExco ? "Exco" : "Member"}
@@ -69,7 +69,7 @@ function MemberCard({
   };
 }) {
   return (
-    <article className="space-y-3 rounded-xl border border-border bg-white p-4">
+    <article className="space-y-3 rounded-md border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold text-foreground">
@@ -83,7 +83,7 @@ function MemberCard({
       </div>
       <dl className="grid grid-cols-2 gap-3 text-sm">
         <div className="space-y-1">
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
             Total Contributed
           </dt>
           <dd className="font-medium text-foreground">
@@ -91,13 +91,13 @@ function MemberCard({
           </dd>
         </div>
         <div className="space-y-1">
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
             Periods Paid
           </dt>
           <dd className="font-medium text-foreground">{member.periods_paid}</dd>
         </div>
         <div className="col-span-2 space-y-1">
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
             Last Payment
           </dt>
           <dd className="text-foreground">{formatDate(member.last_paid_at)}</dd>
@@ -121,10 +121,10 @@ function JoinCodeCard({
   onRevoke: () => void;
 }) {
   return (
-    <article className="space-y-3 rounded-xl border border-border bg-white p-4">
+    <article className="space-y-3 rounded-md border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
             Join Code
           </p>
           <code className="block break-all text-sm font-mono text-foreground">
@@ -136,13 +136,13 @@ function JoinCodeCard({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
             Role
           </p>
           <JoinCodeRoleBadge role={role} />
         </div>
         <div className="space-y-1 text-right">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
             Expires
           </p>
           <p className="text-sm text-foreground">{formatDate(expiresAt)}</p>
@@ -228,9 +228,9 @@ export default function MembersPage() {
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      <h1 className="text-xl font-semibold text-foreground">Members</h1>
+      <h1 className="text-[23px] font-[620] tracking-[-0.015em] text-foreground">Members</h1>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-white">
+      <div className="overflow-hidden rounded-md border border-border bg-card">
         <div className="border-b border-border p-4">
           <Input
             icon={<Search className="h-4 w-4" />}
@@ -246,7 +246,7 @@ export default function MembersPage() {
             ? Array.from({ length: 4 }).map((_, index) => (
                 <div
                   key={index}
-                  className="space-y-3 rounded-xl border border-border bg-white p-4"
+                  className="space-y-3 rounded-md border border-border bg-card p-4"
                 >
                   <Skeleton className="h-5 w-40" />
                   <div className="grid grid-cols-2 gap-3">
@@ -260,7 +260,7 @@ export default function MembersPage() {
                 <MemberCard key={member.member_id} member={member} />
               ))}
           {!membersLoading && filtered.length === 0 && (
-            <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+            <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
               No members found.
             </div>
           )}
@@ -269,7 +269,7 @@ export default function MembersPage() {
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border bg-muted/50">
+              <tr className="border-b border-border bg-muted">
                 {[
                   "Name",
                   "Role",
@@ -301,7 +301,7 @@ export default function MembersPage() {
                 : filtered.map((member) => (
                     <tr
                       key={String(member.member_id)}
-                      className="transition-colors hover:bg-muted/30"
+                      className="transition-colors hover:bg-muted"
                     >
                       <td className="px-4 py-3 font-medium text-foreground">
                         {member.full_name}
@@ -338,7 +338,7 @@ export default function MembersPage() {
         </div>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-border bg-white p-4 sm:p-5">
+      <div className="space-y-4 rounded-md border border-border bg-card p-4 sm:p-5">
         <h2 className="text-base font-medium text-foreground">Join Codes</h2>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
@@ -412,7 +412,7 @@ export default function MembersPage() {
                   {activeCodes.map((joinCode) => (
                     <tr
                       key={joinCode.code}
-                      className="transition-colors hover:bg-muted/30"
+                      className="transition-colors hover:bg-muted"
                     >
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-1.5">

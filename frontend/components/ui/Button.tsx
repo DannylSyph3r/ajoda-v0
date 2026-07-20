@@ -20,22 +20,23 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref,
   ) => {
+    // Keyboard focus comes from the global :focus-visible ring (globals.css).
     const variants: Record<string, string> = {
       primary:
-        "bg-primary text-white hover:bg-primary-dark focus-visible:ring-primary/30",
+        "bg-primary text-white hover:bg-primary-dark active:bg-primary-ink",
       secondary:
-        "bg-secondary text-white hover:bg-secondary-dark focus-visible:ring-secondary/30",
+        "bg-secondary text-white hover:bg-secondary-dark active:bg-secondary-dark",
       outline:
-        "border border-border bg-white text-foreground hover:bg-muted focus-visible:ring-primary/30",
-      ghost: "text-foreground hover:bg-muted focus-visible:ring-primary/30",
+        "border border-border-strong bg-card text-foreground hover:bg-muted active:bg-border",
+      ghost: "text-foreground hover:bg-muted active:bg-border",
       destructive:
-        "bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/30",
+        "bg-destructive text-destructive-foreground hover:bg-destructive/90 active:bg-destructive",
     };
 
     const sizes: Record<string, string> = {
-      sm: "text-xs px-3 py-1.5 gap-1.5 rounded-md",
-      md: "text-sm px-4 py-2 gap-2 rounded-lg",
-      lg: "text-base px-6 py-2.5 gap-2.5 rounded-lg",
+      sm: "text-xs px-3 py-1.5 gap-1.5 rounded-sm",
+      md: "text-sm px-4 py-2 gap-2 rounded-sm",
+      lg: "text-base px-6 py-2.5 gap-2.5 rounded-sm",
     };
 
     return (
@@ -43,8 +44,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         disabled={disabled || loading}
         className={cn(
-          "inline-flex items-center justify-center font-medium transition-colors",
-          "focus-visible:outline-none focus-visible:ring-2",
+          "inline-flex items-center justify-center font-semibold transition-colors",
           "disabled:opacity-50 disabled:cursor-not-allowed",
           variants[variant],
           sizes[size],
