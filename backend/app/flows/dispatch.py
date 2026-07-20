@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import Intent, Role
+from app.core.enums import ConversationFlow, Intent, Role
 from app.models.conversation_session import ConversationSession
 from app.models.member import Member
 from app.repositories.cooperative_repository import CooperativeRepository
@@ -59,6 +59,7 @@ async def send_exco_main_menu(
                 {"id": "coop_status", "title": "📈 Coop Status"},
                 {"id": "view_members", "title": "👥 View Members"},
                 {"id": "member_lookup", "title": "🔍 Member Lookup"},
+                {"id": "disburse", "title": "💸 Withdraw Funds"},
                 {"id": "broadcast", "title": "📢 Broadcast Message"},
                 {"id": "ai_summary", "title": "🤖 AI Summary"},
             ],
@@ -119,6 +120,7 @@ async def dispatch_intent(
         handle_pay_period_selected,
         handle_register_flow,
     )
+    from app.flows.disbursement_flows import handle_disbursement_flow
 
     if member is None:
         if intent == Intent.REGISTER or session.current_flow == "REGISTER":
@@ -308,6 +310,20 @@ async def dispatch_intent(
     ):
         if is_exco:
             await handle_member_lookup_flow(phone, session, coop_id, db, entities)
+        else:
+            await _permission_denied(phone)
+
+    elif (
+        intent
+        in (Intent.DISBURSE, Intent.CONFIRM_DISBURSE, Intent.DISBURSE_RESEND_OTP)
+        or session.current_flow == ConversationFlow.DISBURSE.value
+    ) and intent != Intent.CANCEL:
+        # Exco-only money-out flow. Non-exco never opens it. CANCEL is deliberately
+        # excluded so it falls through to the reset branch below.
+        if is_exco:
+            await handle_disbursement_flow(
+                phone, session, coop_id, member, db, intent, entities
+            )
         else:
             await _permission_denied(phone)
 

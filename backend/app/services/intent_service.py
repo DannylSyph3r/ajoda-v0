@@ -29,12 +29,16 @@ BUTTON_INTENT_MAP: dict[str, Intent] = {
     "confirm_broadcast": Intent.CONFIRM_BROADCAST,
     "cancel": Intent.CANCEL,
     "show_switcher": Intent.SHOW_SWITCHER,
+    "disburse": Intent.DISBURSE,
+    "confirm_disburse": Intent.CONFIRM_DISBURSE,
+    "disburse_resend_otp": Intent.DISBURSE_RESEND_OTP,
 }
 
 _BLOCKING_FLOWS = {
     ConversationFlow.REGISTER.value,
     ConversationFlow.BROADCAST.value,
     ConversationFlow.MEMBER_LOOKUP.value,
+    ConversationFlow.DISBURSE.value,
 }
 
 _gemini_flash: GeminiFlashClient | None = None
@@ -104,6 +108,13 @@ async def route_message(
             and row_id.startswith("lookup_")
         ):
             return Intent.MEMBER_LOOKUP, {"row_id": row_id}
+
+        # Flow-aware list routing — disbursement bank selection
+        if (
+            session.current_flow == ConversationFlow.DISBURSE.value
+            and row_id.startswith("bank_")
+        ):
+            return Intent.DISBURSE, {"row_id": row_id}
 
         # Standard menu list items (same IDs as buttons)
         return classify_button_intent(row_id), {}
