@@ -6,19 +6,29 @@ import { getWithdrawals } from "@/lib/api/cooperatives";
 import { formatNaira, formatDateTime } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { RecordWithdrawalButton } from "@/components/dashboard/RecordWithdrawalButton";
+import type { WithdrawalItem } from "@/lib/api/types";
 
-function WithdrawalCard({
-  withdrawal,
-}: {
-  withdrawal: {
-    id: string;
-    amount: number;
-    reason: string;
-    authorized_by_name: string;
-    pool_balance_after: number;
-    created_at: string;
-  };
-}) {
+const STATUS_STYLES: Record<string, string> = {
+  COMPLETED: "bg-green-100 text-green-800",
+  FAILED: "bg-red-100 text-red-800",
+  PROCESSING: "bg-blue-100 text-blue-800",
+  PENDING_AUTHORIZATION: "bg-amber-100 text-amber-800",
+  INITIATED: "bg-gray-100 text-gray-800",
+};
+
+function StatusPill({ status }: { status: string }) {
+  return (
+    <span
+      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+        STATUS_STYLES[status] ?? "bg-gray-100 text-gray-800"
+      }`}
+    >
+      {status.replace(/_/g, " ")}
+    </span>
+  );
+}
+
+function WithdrawalCard({ withdrawal }: { withdrawal: WithdrawalItem }) {
   return (
     <article className="space-y-3 rounded-xl border border-border bg-white p-4">
       <div className="flex items-start justify-between gap-3">
@@ -30,9 +40,7 @@ function WithdrawalCard({
             {formatDateTime(withdrawal.created_at)}
           </p>
         </div>
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Withdrawal
-        </p>
+        <StatusPill status={withdrawal.status} />
       </div>
       <dl className="space-y-3 text-sm">
         <div className="space-y-1">
@@ -53,10 +61,22 @@ function WithdrawalCard({
               Pool After
             </dt>
             <dd className="font-medium text-foreground">
-              {formatNaira(withdrawal.pool_balance_after)}
+              {withdrawal.pool_balance_after != null
+                ? formatNaira(withdrawal.pool_balance_after)
+                : "—"}
             </dd>
           </div>
         </div>
+        {withdrawal.transfer_reference && (
+          <div className="space-y-1">
+            <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Reference
+            </dt>
+            <dd className="break-all font-mono text-xs text-foreground">
+              {withdrawal.transfer_reference}
+            </dd>
+          </div>
+        )}
       </dl>
     </article>
   );
@@ -118,6 +138,7 @@ export default function WithdrawalsPage() {
                   "Amount (₦)",
                   "Reason",
                   "Authorized By",
+                  "Status",
                   "Pool After",
                 ].map((h) => (
                   <th
@@ -133,7 +154,7 @@ export default function WithdrawalsPage() {
               {isLoading
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i}>
-                      {Array.from({ length: 5 }).map((_, j) => (
+                      {Array.from({ length: 6 }).map((_, j) => (
                         <td key={j} className="px-4 py-3">
                           <Skeleton className="h-4 w-24" />
                         </td>
@@ -160,15 +181,20 @@ export default function WithdrawalsPage() {
                       <td className="px-4 py-3 text-muted-foreground">
                         {w.authorized_by_name}
                       </td>
+                      <td className="px-4 py-3">
+                        <StatusPill status={w.status} />
+                      </td>
                       <td className="px-4 py-3 text-foreground">
-                        {formatNaira(w.pool_balance_after)}
+                        {w.pool_balance_after != null
+                          ? formatNaira(w.pool_balance_after)
+                          : "—"}
                       </td>
                     </tr>
                   ))}
               {!isLoading && items.length === 0 && (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-4 py-8 text-center text-muted-foreground text-sm"
                   >
                     No withdrawals recorded.

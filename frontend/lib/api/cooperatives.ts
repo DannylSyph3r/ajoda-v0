@@ -11,13 +11,15 @@ import type {
   ExcoInviteResponse,
   GenerateJoinCodesResponse,
   InsightResponse,
+  BankItem,
+  DisbursementResponse,
+  InitiateDisbursementRequest,
   MemberListItem,
   PaginatedWithdrawals,
   PeriodListItem,
   PeriodStatusItem,
-  RecordWithdrawalRequest,
-  RecordWithdrawalResponse,
   UpdateSettingsRequest,
+  VerifyRecipientResponse,
 } from "./types";
 
 export async function listCooperatives(): Promise<CooperativeListItem[]> {
@@ -130,17 +132,60 @@ export async function getWithdrawals(
   return r.data as PaginatedWithdrawals;
 }
 
-export async function recordWithdrawal(
+export async function getDisbursementBanks(
   coopId: string,
-  data: RecordWithdrawalRequest,
-  stepUpToken: string,
-): Promise<RecordWithdrawalResponse> {
+): Promise<BankItem[]> {
+  const r = await apiClient.get(
+    `/api/cooperatives/${coopId}/disbursements/banks`,
+  );
+  return r.data as BankItem[];
+}
+
+export async function verifyRecipient(
+  coopId: string,
+  accountNumber: string,
+  bankCode: string,
+): Promise<VerifyRecipientResponse> {
   const r = await apiClient.post(
-    `/api/cooperatives/${coopId}/withdrawals`,
+    `/api/cooperatives/${coopId}/disbursements/verify-recipient`,
+    { account_number: accountNumber, bank_code: bankCode },
+  );
+  return r.data as VerifyRecipientResponse;
+}
+
+export async function initiateDisbursement(
+  coopId: string,
+  data: InitiateDisbursementRequest,
+  stepUpToken: string,
+): Promise<DisbursementResponse> {
+  const r = await apiClient.post(
+    `/api/cooperatives/${coopId}/disbursements`,
     data,
     { headers: { "X-Step-Up-Token": stepUpToken } },
   );
-  return r.data as RecordWithdrawalResponse;
+  return r.data as DisbursementResponse;
+}
+
+export async function authorizeDisbursement(
+  coopId: string,
+  withdrawalId: string,
+  otp: string,
+): Promise<DisbursementResponse> {
+  const r = await apiClient.post(
+    `/api/cooperatives/${coopId}/disbursements/${withdrawalId}/authorize`,
+    { otp },
+  );
+  return r.data as DisbursementResponse;
+}
+
+export async function getDisbursementStatus(
+  coopId: string,
+  withdrawalId: string,
+): Promise<DisbursementResponse> {
+  const r = await apiClient.get(
+    `/api/cooperatives/${coopId}/disbursements/${withdrawalId}`,
+  );
+  return r.data as DisbursementResponse;
 }
 
 export async function getInsights(coopId: string): Promise<InsightResponse> {

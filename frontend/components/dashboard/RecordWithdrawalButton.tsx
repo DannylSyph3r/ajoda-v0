@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDownCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { StepUpModal } from "@/components/modals/StepUpModal";
-import { WithdrawalModal } from "@/components/modals/WithdrawalModal";
+import { DisbursementModal } from "@/components/modals/DisbursementModal";
 import { cn } from "@/lib/utils";
 
 interface RecordWithdrawalButtonProps {
@@ -19,12 +19,12 @@ export function RecordWithdrawalButton({
 }: RecordWithdrawalButtonProps) {
   const queryClient = useQueryClient();
   const [stepUpOpen, setStepUpOpen] = useState(false);
-  const [withdrawalOpen, setWithdrawalOpen] = useState(false);
+  const [disbursementOpen, setDisbursementOpen] = useState(false);
   const [stepUpToken, setStepUpToken] = useState("");
 
   const handleAuthorized = (token: string) => {
     setStepUpToken(token);
-    setWithdrawalOpen(true);
+    setDisbursementOpen(true);
   };
 
   const handleSuccess = () => {
@@ -52,9 +52,9 @@ export function RecordWithdrawalButton({
         onAuthorized={handleAuthorized}
       />
 
-      <WithdrawalModal
-        open={withdrawalOpen}
-        onClose={() => setWithdrawalOpen(false)}
+      <DisbursementModal
+        open={disbursementOpen}
+        onClose={() => setDisbursementOpen(false)}
         coopId={coopId}
         stepUpToken={stepUpToken}
         onSuccess={handleSuccess}

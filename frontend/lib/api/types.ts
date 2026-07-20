@@ -139,14 +139,23 @@ export interface PeriodListItem {
   is_open: boolean;
 }
 
-// Withdrawals
+// Withdrawals & disbursements
+
+export type DisbursementStatus =
+  | "INITIATED"
+  | "PENDING_AUTHORIZATION"
+  | "PROCESSING"
+  | "COMPLETED"
+  | "FAILED";
 
 export interface WithdrawalItem {
   id: string;
   amount: number;
   reason: string;
   authorized_by_name: string;
-  pool_balance_after: number;
+  pool_balance_after: number | null;
+  status: DisbursementStatus;
+  transfer_reference: string | null;
   created_at: string;
 }
 
@@ -157,14 +166,37 @@ export interface PaginatedWithdrawals {
   has_more: boolean;
 }
 
-export interface RecordWithdrawalRequest {
-  amount_kobo: number;
-  reason: string;
+export interface BankItem {
+  code: string;
+  name: string;
 }
 
-export interface RecordWithdrawalResponse {
+export interface VerifyRecipientResponse {
+  account_name: string;
+  account_masked: string;
+  bank_code: string;
+}
+
+export interface InitiateDisbursementRequest {
+  amount_kobo: number;
+  reason: string;
+  account_number: string;
+  bank_code: string;
+  account_name: string;
+}
+
+export interface DisbursementResponse {
   withdrawal_id: string;
-  pool_balance_after: number;
+  status: DisbursementStatus;
+  transfer_reference: string | null;
+  amount: number;
+  reason: string;
+  destination_account_masked: string | null;
+  destination_bank_code: string | null;
+  destination_account_name: string | null;
+  failure_reason: string | null;
+  pool_balance_after: number | null;
+  created_at: string;
 }
 
 // Misc
