@@ -531,6 +531,9 @@ class WithdrawalService:
             )
             await self.db.commit()
         await self._notify_exco_terminal(wid)
+        # Phase 6: transparency broadcast to all members — fires ONLY here, on
+        # COMPLETED, never on FAILED.
+        await self._broadcast_completed_disbursement(wid)
 
     async def _fail_withdrawal(self, reference: str, reason: str) -> None:
         claim = await self.db.execute(
@@ -588,3 +591,64 @@ class WithdrawalService:
             await send_text_message(member.phone_number, text)
         except Exception as exc:  # noqa: BLE001 — notification is best-effort
             logger.warning("Exco disbursement notification failed: %s", exc)
+
+    async def _broadcast_completed_disbursement(self, withdrawal_id: UUID) -> None:
+        """
+        Phase 6 transparency broadcast. Fires only on COMPLETED. Sends every member a
+        FREE-FORM message (send_text_message — not a Meta template, so no re-approval)
+        carrying the real Monnify transfer reference and completed status. The
+        recipient account is masked to the last 4; the verified holder name is exco-only
+        and is NOT broadcast. Best-effort — per-member failures are logged, not raised.
+
+        Note: free-form messages only deliver within WhatsApp's 24h session window; a
+        member silent >24h will not receive this. Switch on the retained
+        `_broadcast_withdrawal_notification` template for guaranteed delivery if needed.
+        """
+        w_result = await self.db.execute(
+            select(Withdrawal).where(Withdrawal.id == withdrawal_id)
+        )
+        w = w_result.scalar_one_or_none()
+        if not w or w.status != WithdrawalStatus.COMPLETED.value:
+            return
+
+        coop_result = await self.db.execute(
+            select(Cooperative).where(Cooperative.id == w.cooperative_id)
+        )
+        coop = coop_result.scalar_one_or_none()
+        coop_name = coop.name if coop else "your cooperative"
+
+        auth_result = await self.db.execute(
+            select(Member.full_name).where(Member.id == w.authorized_by_member_id)
+        )
+        authoriser = auth_result.scalar_one_or_none() or "an exco"
+
+        members_result = await self.db.execute(
+            select(Member.phone_number)
+            .join(CoopMember, CoopMember.member_id == Member.id)
+            .where(CoopMember.cooperative_id == w.cooperative_id)
+        )
+        phones = [row[0] for row in members_result.all()]
+
+        amount_naira = w.amount // 100
+        date_str = (w.updated_at or w.created_at).strftime("%d %b %Y")
+        masked = _mask_account(w.destination_account_number)
+        lines = [
+            f"📢 *{coop_name}* — pool disbursement",
+            "",
+            f"₦{amount_naira:,} was disbursed from the pool on {date_str}.",
+            f"For: {w.reason}",
+            f"Authorised by: {authoriser}",
+            f"To account: {masked}",
+            f"Ref: {w.transfer_reference} (completed)",
+        ]
+        if w.pool_balance_after is not None:
+            lines.append(f"Pool balance now: ₦{w.pool_balance_after // 100:,}")
+        text = "\n".join(lines)
+
+        from app.services.whatsapp_service import send_text_message
+
+        for phone in phones:
+            try:
+                await send_text_message(phone, text)
+            except Exception as exc:  # noqa: BLE001 — broadcast is best-effort
+                logger.warning("Disbursement broadcast failed to %s: %s", phone, exc)
