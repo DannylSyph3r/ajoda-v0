@@ -147,14 +147,46 @@ class PayablePeriodsResponse(BaseModel):
     periods: list[PayablePeriodItem]
 
 
-class RecordWithdrawalRequest(BaseModel):
+class BankItem(BaseModel):
+    code: str
+    name: str
+
+
+class VerifyRecipientRequest(BaseModel):
+    account_number: str = Field(..., min_length=10, max_length=10)
+    bank_code: str = Field(..., min_length=3, max_length=10)
+
+
+class VerifyRecipientResponse(BaseModel):
+    account_name: str
+    account_masked: str
+    bank_code: str
+
+
+class InitiateDisbursementRequest(BaseModel):
     amount_kobo: int = Field(..., gt=0, description="Withdrawal amount in kobo")
     reason: str = Field(..., min_length=3, max_length=500)
+    account_number: str = Field(..., min_length=10, max_length=10)
+    bank_code: str = Field(..., min_length=3, max_length=10)
+    account_name: str = Field(..., min_length=1, max_length=255)
 
 
-class RecordWithdrawalResponse(BaseModel):
+class AuthorizeDisbursementRequest(BaseModel):
+    otp: str = Field(..., min_length=3, max_length=10)
+
+
+class DisbursementResponse(BaseModel):
     withdrawal_id: UUID
-    pool_balance_after: int
+    status: str
+    transfer_reference: str | None
+    amount: int
+    reason: str
+    destination_account_masked: str | None
+    destination_bank_code: str | None
+    destination_account_name: str | None
+    failure_reason: str | None
+    pool_balance_after: int | None
+    created_at: datetime
 
 
 class WithdrawalListItem(BaseModel):
@@ -162,7 +194,9 @@ class WithdrawalListItem(BaseModel):
     amount: int
     reason: str
     authorized_by_name: str
-    pool_balance_after: int
+    pool_balance_after: int | None
+    status: str
+    transfer_reference: str | None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

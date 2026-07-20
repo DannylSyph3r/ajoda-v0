@@ -30,13 +30,17 @@ from app.schemas.cooperative import (
     InsightResponse,
     JoinCodeItem,
     JoinCodesResponse,
+    AuthorizeDisbursementRequest,
+    BankItem,
+    DisbursementResponse,
+    InitiateDisbursementRequest,
     MemberListItem,
     PaginatedWithdrawals,
     PayablePeriodItem,
     PayablePeriodsResponse,
-    RecordWithdrawalRequest,
-    RecordWithdrawalResponse,
     UpdateSettingsRequest,
+    VerifyRecipientRequest,
+    VerifyRecipientResponse,
     WithdrawalListItem,
     BroadcastRequest,
     BroadcastResponse,
@@ -48,7 +52,7 @@ from app.services.cooperative_service import CooperativeService
 from app.services.gemini_service import GeminiProClient
 from app.services.join_code_service import JoinCodeService
 from app.services.period_service import PeriodService
-from app.services.withdrawal_service import WithdrawalService
+from app.services.withdrawal_service import WithdrawalService, _mask_account
 
 logger = logging.getLogger("akoweai")
 
@@ -234,25 +238,107 @@ async def get_payable_periods(
     )
 
 
-@router.post("/{coop_id}/withdrawals", status_code=201)
-async def record_withdrawal(
+def _disbursement_response(w) -> DisbursementResponse:
+    return DisbursementResponse(
+        withdrawal_id=w.id,
+        status=w.status,
+        transfer_reference=w.transfer_reference,
+        amount=w.amount,
+        reason=w.reason,
+        destination_account_masked=_mask_account(w.destination_account_number),
+        destination_bank_code=w.destination_bank_code,
+        destination_account_name=w.destination_account_name,
+        failure_reason=w.failure_reason,
+        pool_balance_after=w.pool_balance_after,
+        created_at=w.created_at,
+    )
+
+
+@router.get("/{coop_id}/disbursements/banks")
+async def list_disbursement_banks(
     coop_id: UUID,
-    body: RecordWithdrawalRequest,
+    _exco=Depends(require_coop_exco),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    banks = await WithdrawalService(db).get_banks()
+    return ApiResponse.success(
+        data=[BankItem(**b) for b in banks], message="OK"
+    )
+
+
+@router.post("/{coop_id}/disbursements/verify-recipient")
+async def verify_disbursement_recipient(
+    coop_id: UUID,
+    body: VerifyRecipientRequest,
+    _exco=Depends(require_coop_exco),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    result = await WithdrawalService(db).verify_recipient(
+        body.account_number, body.bank_code
+    )
+    return ApiResponse.success(
+        data=VerifyRecipientResponse(
+            account_name=result["account_name"],
+            account_masked=_mask_account(body.account_number),
+            bank_code=body.bank_code,
+        ),
+        message="Recipient verified",
+    )
+
+
+@router.post("/{coop_id}/disbursements", status_code=201)
+async def initiate_disbursement(
+    coop_id: UUID,
+    body: InitiateDisbursementRequest,
     current_member: Member = Depends(get_current_member),
     _exco=Depends(require_coop_exco),
     _step_up=Depends(require_step_up(StepUpAction.WITHDRAWAL)),
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse:
-    result = await WithdrawalService(db).record_withdrawal(
+    withdrawal = await WithdrawalService(db).initiate_disbursement(
         coop_id=coop_id,
         amount_kobo=body.amount_kobo,
         reason=body.reason,
+        account_number=body.account_number,
+        bank_code=body.bank_code,
+        account_name=body.account_name,
         authorized_by_member_id=current_member.id,
     )
     return ApiResponse.success(
-        data=RecordWithdrawalResponse(**result),
-        message="Withdrawal recorded",
+        data=_disbursement_response(withdrawal),
+        message="Disbursement initiated",
         status_code=201,
+    )
+
+
+@router.post("/{coop_id}/disbursements/{withdrawal_id}/authorize")
+async def authorize_disbursement(
+    coop_id: UUID,
+    withdrawal_id: UUID,
+    body: AuthorizeDisbursementRequest,
+    _exco=Depends(require_coop_exco),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    service = WithdrawalService(db)
+    withdrawal = await service.get_disbursement_for_coop(coop_id, withdrawal_id)
+    withdrawal = await service.authorize_disbursement(withdrawal, body.otp)
+    return ApiResponse.success(
+        data=_disbursement_response(withdrawal), message="OTP submitted"
+    )
+
+
+@router.get("/{coop_id}/disbursements/{withdrawal_id}")
+async def get_disbursement(
+    coop_id: UUID,
+    withdrawal_id: UUID,
+    _exco=Depends(require_coop_exco),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    withdrawal = await WithdrawalService(db).get_disbursement_status(
+        coop_id, withdrawal_id
+    )
+    return ApiResponse.success(
+        data=_disbursement_response(withdrawal), message="OK"
     )
 
 
