@@ -115,7 +115,7 @@ function DashboardNavContent({
           <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
             <span className="text-white font-bold text-xs">A</span>
           </div>
-          <span className="font-semibold text-foreground">AkoweAI</span>
+          <span className="font-semibold text-foreground">Ajoda</span>
         </div>
         {showCloseButton && (
           <button

@@ -29,7 +29,7 @@ _INITIATE_FORM_TEMPLATE = """<!DOCTYPE html>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AkoweAI — Redirecting to payment...</title>
+    <title>Ajoda — Redirecting to payment...</title>
     <style>
         body {{ font-family: sans-serif; display: flex; justify-content: center;
                align-items: center; min-height: 100vh; margin: 0; background: #f5f5f5; }}
@@ -56,7 +56,7 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AkoweAI \u2014 Payment Received</title>
+    <title>Ajoda \u2014 Payment Received</title>
     <style>
         *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
@@ -171,7 +171,7 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
                 <polyline points="20 6 9 17 4 12"></polyline>
             </svg>
         </div>
-        <div class="brand">AkoweAI</div>
+        <div class="brand">Ajoda</div>
         <h1>Payment Received</h1>
         <p class="subtitle">
             Your receipt is being prepared.<br>
@@ -183,7 +183,7 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
         <a id="action-btn" class="action-btn" href="#">Loading&hellip;</a>
         <p id="close-msg" class="close-msg">You may now close this tab.</p>
-        <div class="footer">Powered by AkoweAI &middot; Secured by Interswitch</div>
+        <div class="footer">Powered by Ajoda &middot; Secured by Interswitch</div>
     </div>
     <script>
         (function () {{

@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     interswitch_base_url: str = "https://newwebpay.qa.interswitchng.com"
     interswitch_query_url: str = "https://qa.interswitchng.com/collections/api/v1/gettransaction.json"
 
+    # Monnify (PSP — collections + disbursement). Sandbox base by default; flip to
+    # https://api.monnify.com for live via env. No separate webhook-signing secret —
+    # Monnify signs webhooks with the Secret Key.
+    monnify_base_url: str = "https://sandbox.monnify.com"
+    monnify_api_key: str = ""
+    monnify_secret_key: str = ""
+    monnify_contract_code: str = ""
+    monnify_wallet_account_number: str = ""  # disbursement wallet / transfer source
+
     # AI
     gemini_api_key: str = ""
 

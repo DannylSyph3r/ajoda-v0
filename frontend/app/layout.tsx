@@ -3,7 +3,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "AkoweAI",
+  title: "Ajoda",
   description: "Cooperative savings management, simplified.",
 };
 

@@ -40,3 +40,7 @@ Thumbs.db
 
 # ── Claude Code
 .claude/
+
+# --- Custom
+Ajoda_Prototype_Implementation_Checklist.md
+Ajoda_Prototype_Implementation_Reference.md

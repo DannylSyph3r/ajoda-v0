@@ -20,7 +20,7 @@ export default function LandingPage() {
           <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
             <span className="text-white font-bold text-xs">A</span>
           </div>
-          <span className="font-semibold text-foreground">AkoweAI</span>
+          <span className="font-semibold text-foreground">Ajoda</span>
         </div>
         <Link
           href="/login"
@@ -43,7 +43,7 @@ export default function LandingPage() {
           </h1>
 
           <p className="text-muted-foreground text-lg leading-relaxed">
-            AkoweAI brings your cooperative savings group into the digital age —
+            Ajoda brings your cooperative savings group into the digital age —
             contributions, reminders, and financial insights, all without leaving
             WhatsApp.
           </p>
@@ -87,7 +87,7 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-border px-6 py-4 text-center">
         <p className="text-xs text-muted-foreground">
-          © {new Date().getFullYear()} AkoweAI. Built for Nigeria&apos;s cooperative culture.
+          © {new Date().getFullYear()} Ajoda. Built for Nigeria&apos;s cooperative culture.
         </p>
       </footer>
     </div>

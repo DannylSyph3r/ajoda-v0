@@ -19,10 +19,10 @@ logger = logging.getLogger("akoweai")
 
 
 def generate_transaction_reference() -> str:
-    """Generate a unique payment reference: AKOWE-{timestamp_ms}-{6 hex chars}."""
+    """Generate a unique payment reference: AJODA-{timestamp_ms}-{6 hex chars}."""
     ts_ms = int(time.time() * 1000)
     rand = secrets.token_hex(3).upper()
-    return f"AKOWE-{ts_ms}-{rand}"
+    return f"AJODA-{ts_ms}-{rand}"
 
 
 class PaymentService:

@@ -75,7 +75,7 @@ async def send_exco_main_menu(
 
     await send_list_message(
         phone,
-        header="AkoweAI",
+        header="Ajoda",
         body=greeting,
         button_text="View Options",
         sections=sections,
@@ -126,7 +126,7 @@ async def dispatch_intent(
             return
         await send_text_message(
             phone,
-            "Welcome to AkoweAI! 👋\n\nI manage contributions for savings cooperatives. "
+            "Welcome to Ajoda! 👋\n\nI manage contributions for savings cooperatives. "
             "To get started, tap the button below.",
         )
         await send_reply_buttons(

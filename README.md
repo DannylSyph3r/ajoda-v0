@@ -64,4 +64,17 @@ Once whitelisted, send any message to the number above to get started.
 
 ---
 
+## Known Limitations (Ajoda prototype)
+
+- **Meta template residuals.** The bot's transactional WhatsApp messages are sent through
+  Meta-registered message templates (`payment_receipt`, `coop_withdrawal_alert`,
+  `coop_contribution_reminder`, `coop_broadcast_message`). Template *bodies* live in Meta
+  Business Manager, not in this repository, and cannot be edited without triggering a Meta
+  re-approval cycle. If any template body still contains the legacy "Akowe"/"AkoweAI"
+  wording, it remains until V1 by design — the rebrand to Ajoda is applied only to free-form
+  bot copy and the dashboard, never to a registered template name or body.
+- This is a sandbox-only prototype: no live PSP keys, no live disbursement activation.
+
+---
+
 Built for the cooperative communities that keep Nigeria's informal economy running.

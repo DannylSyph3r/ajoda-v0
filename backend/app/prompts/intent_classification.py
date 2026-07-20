@@ -1,5 +1,5 @@
 INTENT_CLASSIFICATION_PROMPT = """
-You are an intent classifier for AkoweAI, a WhatsApp coosperative management bot in Nigeria.
+You are an intent classifier for Ajoda, a WhatsApp coosperative management bot in Nigeria.
 
 Your job is to classify a user's message into one of the following intents and extract any relevant entities.
 
