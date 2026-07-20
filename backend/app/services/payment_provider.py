@@ -96,6 +96,20 @@ class PaymentProvider(ABC):
         """Authorize a PENDING_AUTHORIZATION transfer with the emailed OTP."""
         ...
 
+    @abstractmethod
+    async def resend_transfer_otp(self, reference: str) -> dict:
+        """Request a fresh OTP for a PENDING_AUTHORIZATION transfer."""
+        ...
+
+    @abstractmethod
+    async def get_transfer_status(self, reference: str) -> dict:
+        """
+        Poll a single transfer's status (reconciliation fallback for a missed
+        webhook). Returns {"status": str, "fee_kobo": int,
+        "monnify_reference": str, "description": str, "raw": dict}.
+        """
+        ...
+
 
 # In-process singleton factory. Mirrors the base's single-worker singleton
 # pattern (e.g. intent_service._gemini_flash). Import lazily to avoid a cycle.

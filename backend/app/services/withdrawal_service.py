@@ -5,101 +5,61 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
+from app.core.enums import WithdrawalStatus
 from app.core.exceptions import BadRequestException, NotFoundException
 from app.models.cooperative import Cooperative
 from app.models.coop_member import CoopMember
 from app.models.member import Member
 from app.models.withdrawal import Withdrawal
+from app.services.payment_provider import get_payment_provider
+from app.services.payment_service import generate_disbursement_reference
 from app.services.whatsapp_service import (
     TEMPLATE_WITHDRAWAL_ALERT,
     send_template_message,
 )
 
+settings = get_settings()
 logger = logging.getLogger("akoweai")
+
+_TERMINAL = (WithdrawalStatus.COMPLETED.value, WithdrawalStatus.FAILED.value)
+
+# Map Monnify's various transfer status words (from initiate / authorize / poll /
+# webhook) onto our five-state machine. Unknown -> PROCESSING (safe; re-polled).
+_STATUS_MAP = {
+    "SUCCESS": WithdrawalStatus.COMPLETED,
+    "COMPLETED": WithdrawalStatus.COMPLETED,
+    "PENDING_AUTHORIZATION": WithdrawalStatus.PENDING_AUTHORIZATION,
+    "OTP_EMAIL_DISPATCH_FAILED": WithdrawalStatus.PENDING_AUTHORIZATION,
+    "PENDING": WithdrawalStatus.PROCESSING,
+    "AWAITING_PROCESSING": WithdrawalStatus.PROCESSING,
+    "IN_PROGRESS": WithdrawalStatus.PROCESSING,
+    "PROCESSING": WithdrawalStatus.PROCESSING,
+    "FAILED": WithdrawalStatus.FAILED,
+    "REVERSED": WithdrawalStatus.FAILED,
+    "EXPIRED": WithdrawalStatus.FAILED,
+}
+
+
+def normalize_transfer_status(monnify_status: str) -> WithdrawalStatus:
+    return _STATUS_MAP.get((monnify_status or "").upper(), WithdrawalStatus.PROCESSING)
+
+
+def _mask_account(account_number: str | None) -> str:
+    """Mask all but the last 4 digits of an account number for member-facing text."""
+    if not account_number:
+        return "••••"
+    return "••••" + account_number[-4:]
 
 
 class WithdrawalService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def record_withdrawal(
-        self,
-        coop_id: UUID,
-        amount_kobo: int,
-        reason: str,
-        authorized_by_member_id: UUID,
-    ) -> dict:
-        """
-        Validate, record, and broadcast a cooperative withdrawal.
-        Uses a conditional UPDATE as an atomic balance guard to prevent
-        the pool going negative even under concurrent requests.
-        """
-        # Load cooperative for validation and broadcast context
-        coop_result = await self.db.execute(
-            select(Cooperative).where(Cooperative.id == coop_id)
-        )
-        coop = coop_result.scalar_one_or_none()
-        if not coop:
-            raise NotFoundException("Cooperative not found")
-
-        if amount_kobo <= 0:
-            raise BadRequestException("Withdrawal amount must be greater than zero")
-
-        if amount_kobo > coop.pool_balance:
-            raise BadRequestException(
-                f"Insufficient pool balance. "
-                f"Available: ₦{coop.pool_balance // 100:,}, "
-                f"Requested: ₦{amount_kobo // 100:,}"
-            )
-
-        # Atomic decrement with balance guard — prevents going negative
-        # under concurrent withdrawals
-        update_result = await self.db.execute(
-            update(Cooperative)
-            .where(
-                Cooperative.id == coop_id,
-                Cooperative.pool_balance >= amount_kobo,
-            )
-            .values(pool_balance=Cooperative.pool_balance - amount_kobo)
-            .returning(Cooperative.pool_balance)
-        )
-        new_balance = update_result.scalar_one_or_none()
-        if new_balance is None:
-            raise BadRequestException(
-                "Withdrawal could not be processed — balance may have changed. "
-                "Please try again."
-            )
-
-        withdrawal = Withdrawal(
-            cooperative_id=coop_id,
-            amount=amount_kobo,
-            reason=reason,
-            authorized_by_member_id=authorized_by_member_id,
-            pool_balance_after=new_balance,
-        )
-        self.db.add(withdrawal)
-        await self.db.flush()
-        await self.db.commit()
-        await self.db.refresh(withdrawal)
-
-        # Load authorized member name for broadcast
-        member_result = await self.db.execute(
-            select(Member).where(Member.id == authorized_by_member_id)
-        )
-        authorized_member = member_result.scalar_one_or_none()
-        authorized_name = authorized_member.full_name if authorized_member else "Exco"
-
-        # Broadcast to all members — errors are logged, not raised
-        await self._broadcast_withdrawal_notification(
-            withdrawal=withdrawal,
-            coop=coop,
-            authorized_member_name=authorized_name,
-        )
-
-        return {
-            "withdrawal_id": withdrawal.id,
-            "pool_balance_after": new_balance,
-        }
+    # record_withdrawal (log-only, debited at record time) was retired in Phase 4 —
+    # every withdrawal is now a real disbursement through the engine below.
+    # _broadcast_withdrawal_notification is retained for Phase 6, which fires the
+    # member broadcast on COMPLETED.
 
     async def _broadcast_withdrawal_notification(
         self,
@@ -181,6 +141,8 @@ class WithdrawalService:
                 Withdrawal.amount,
                 Withdrawal.reason,
                 Withdrawal.pool_balance_after,
+                Withdrawal.status,
+                Withdrawal.transfer_reference,
                 Withdrawal.created_at,
                 Member.full_name.label("authorized_by_name"),
             )
@@ -198,6 +160,8 @@ class WithdrawalService:
                 "reason": row.reason,
                 "authorized_by_name": row.authorized_by_name,
                 "pool_balance_after": row.pool_balance_after,
+                "status": row.status,
+                "transfer_reference": row.transfer_reference,
                 "created_at": row.created_at,
             }
             for row in result.all()
@@ -209,3 +173,418 @@ class WithdrawalService:
             "page": page,
             "has_more": total > page * page_size,
         }
+
+    # ================================================================== #
+    # Disbursement engine (Phase 3) — consumed by the dashboard (Phase 4)
+    # and the bot (Phase 5) surfaces.
+    # ================================================================== #
+
+    # --- Thin provider passthroughs (keep surfaces off the provider directly) ---
+    async def get_banks(self) -> list[dict]:
+        return await get_payment_provider().get_banks()
+
+    async def verify_recipient(self, account_number: str, bank_code: str) -> dict:
+        """Name Enquiry — returns the verified holder name for a Confirm/Cancel beat."""
+        return await get_payment_provider().name_enquiry(account_number, bank_code)
+
+    async def get_wallet_balance(self) -> dict:
+        return await get_payment_provider().wallet_balance()
+
+    async def check_precondition_gate(self, coop_id: UUID, amount_kobo: int) -> None:
+        """Public gate check for surfaces that evaluate it before initiation (the
+        bot confirm beat). Raises BadRequestException with the specific reason."""
+        result = await self.db.execute(
+            select(Cooperative).where(Cooperative.id == coop_id)
+        )
+        coop = result.scalar_one_or_none()
+        if not coop:
+            raise NotFoundException("Cooperative not found")
+        await self._evaluate_precondition_gate(coop, amount_kobo)
+
+    async def get_withdrawal_by_reference(self, reference: str) -> Withdrawal | None:
+        result = await self.db.execute(
+            select(Withdrawal).where(Withdrawal.transfer_reference == reference)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_disbursement_for_coop(
+        self, coop_id: UUID, withdrawal_id: UUID
+    ) -> Withdrawal:
+        """
+        Load a withdrawal scoped to its cooperative (IDOR guard). An exco of one
+        cooperative can never act on another cooperative's withdrawal.
+        """
+        result = await self.db.execute(
+            select(Withdrawal).where(
+                Withdrawal.id == withdrawal_id,
+                Withdrawal.cooperative_id == coop_id,
+            )
+        )
+        withdrawal = result.scalar_one_or_none()
+        if withdrawal is None:
+            raise NotFoundException("Withdrawal not found")
+        return withdrawal
+
+    async def get_disbursement_status(
+        self, coop_id: UUID, withdrawal_id: UUID
+    ) -> Withdrawal:
+        """
+        Scoped status read with reconciliation-on-read: if the transfer is still
+        PROCESSING, poll Monnify and resolve before returning, so the dashboard
+        settles terminal status even when the webhook cannot reach a local instance.
+        """
+        withdrawal = await self.get_disbursement_for_coop(coop_id, withdrawal_id)
+        if (
+            withdrawal.status == WithdrawalStatus.PROCESSING.value
+            and withdrawal.transfer_reference
+        ):
+            try:
+                await self.poll_and_resolve_transfer(withdrawal.transfer_reference)
+            except Exception as exc:  # noqa: BLE001 — read must not fail on poll error
+                logger.warning("Status poll failed for %s: %s", withdrawal_id, exc)
+            withdrawal = await self.get_disbursement_for_coop(coop_id, withdrawal_id)
+        return withdrawal
+
+    # --- Precondition gate ---
+    async def _evaluate_precondition_gate(
+        self, coop: Cooperative, amount_kobo: int
+    ) -> None:
+        """
+        The bound gate: BOTH the pool AND the disbursement wallet must be sufficient
+        before any transfer is initiated. Distinct messages so the failure is
+        diagnosable in a live demo.
+        """
+        # 1. Pool sufficiency (is the withdrawal legitimate?)
+        if amount_kobo > coop.pool_balance:
+            raise BadRequestException(
+                "The cooperative pool has insufficient funds. "
+                f"Available: ₦{coop.pool_balance // 100:,}, "
+                f"requested: ₦{amount_kobo // 100:,}."
+            )
+        # 2. Wallet sufficiency incl. fee buffer (can we actually execute it?)
+        wallet = await get_payment_provider().wallet_balance()
+        needed = amount_kobo + settings.monnify_transfer_fee_buffer_kobo
+        if wallet["available_kobo"] < needed:
+            raise BadRequestException(
+                "The disbursement wallet needs funding. "
+                f"Available: ₦{wallet['available_kobo'] // 100:,}, "
+                f"required (incl. fees): ₦{needed // 100:,}."
+            )
+
+    # --- Initiation ---
+    async def initiate_disbursement(
+        self,
+        *,
+        coop_id: UUID,
+        amount_kobo: int,
+        reason: str,
+        account_number: str,
+        bank_code: str,
+        account_name: str,
+        authorized_by_member_id: UUID,
+    ) -> Withdrawal:
+        """
+        Run the precondition gate, create the withdrawal, and initiate the Monnify
+        transfer (async=true → PENDING_AUTHORIZATION with MFA on). The reference is
+        generated once and persisted before the transfer exists, so a webhook can
+        always resolve back to this withdrawal.
+        """
+        if amount_kobo <= 0:
+            raise BadRequestException("Withdrawal amount must be greater than zero")
+
+        coop_result = await self.db.execute(
+            select(Cooperative).where(Cooperative.id == coop_id)
+        )
+        coop = coop_result.scalar_one_or_none()
+        if not coop:
+            raise NotFoundException("Cooperative not found")
+
+        await self._evaluate_precondition_gate(coop, amount_kobo)
+
+        withdrawal = Withdrawal(
+            cooperative_id=coop_id,
+            amount=amount_kobo,
+            reason=reason,
+            authorized_by_member_id=authorized_by_member_id,
+            status=WithdrawalStatus.INITIATED.value,
+            transfer_reference=generate_disbursement_reference(),
+            destination_account_number=account_number,
+            destination_bank_code=bank_code,
+            destination_account_name=account_name,
+        )
+        self.db.add(withdrawal)
+        await self.db.commit()
+        await self.db.refresh(withdrawal)
+
+        return await self._run_initiation(withdrawal)
+
+    async def reinitiate_disbursement(self, withdrawal: Withdrawal) -> Withdrawal:
+        """
+        Retry initiation for a withdrawal, REUSING its existing reference (never a
+        fresh one). Monnify dedups on the reference, so a retry cannot create a
+        second transfer. Only INITIATED/FAILED withdrawals are retryable.
+        """
+        if not withdrawal.transfer_reference:
+            raise BadRequestException("This withdrawal has no reference to retry.")
+        if withdrawal.status not in (
+            WithdrawalStatus.INITIATED.value,
+            WithdrawalStatus.FAILED.value,
+        ):
+            raise BadRequestException("This withdrawal is not in a retryable state.")
+
+        coop_result = await self.db.execute(
+            select(Cooperative).where(Cooperative.id == withdrawal.cooperative_id)
+        )
+        coop = coop_result.scalar_one_or_none()
+        if not coop:
+            raise NotFoundException("Cooperative not found")
+        await self._evaluate_precondition_gate(coop, withdrawal.amount)
+
+        await self.db.execute(
+            update(Withdrawal)
+            .where(Withdrawal.id == withdrawal.id)
+            .values(
+                status=WithdrawalStatus.INITIATED.value,
+                failure_reason=None,
+                updated_at=datetime.now(timezone.utc),
+            )
+        )
+        await self.db.commit()
+        await self.db.refresh(withdrawal)
+        return await self._run_initiation(withdrawal)
+
+    async def _run_initiation(self, withdrawal: Withdrawal) -> Withdrawal:
+        """
+        Call Monnify to initiate the transfer for an already-persisted withdrawal,
+        reusing its stored reference and destination. Shared by initiate and retry.
+        """
+        now = datetime.now(timezone.utc)
+        try:
+            result = await get_payment_provider().initiate_transfer(
+                reference=withdrawal.transfer_reference,
+                amount_kobo=withdrawal.amount,
+                bank_code=withdrawal.destination_bank_code,
+                account_number=withdrawal.destination_account_number,
+                account_name=withdrawal.destination_account_name,
+                narration=withdrawal.reason[:100],
+            )
+        except Exception as exc:
+            reason_txt = getattr(exc, "message", None) or "Transfer initiation failed."
+            await self.db.execute(
+                update(Withdrawal)
+                .where(Withdrawal.id == withdrawal.id)
+                .values(
+                    status=WithdrawalStatus.FAILED.value,
+                    failure_reason=reason_txt[:500],
+                    updated_at=now,
+                )
+            )
+            await self.db.commit()
+            raise
+
+        our_status = normalize_transfer_status(result["status"])
+        await self.db.execute(
+            update(Withdrawal)
+            .where(Withdrawal.id == withdrawal.id)
+            .values(status=our_status.value, updated_at=now)
+        )
+        await self.db.commit()
+        await self.db.refresh(withdrawal)
+        return withdrawal
+
+    # --- OTP authorization ---
+    async def authorize_disbursement(
+        self, withdrawal: Withdrawal, otp: str
+    ) -> Withdrawal:
+        if withdrawal.status != WithdrawalStatus.PENDING_AUTHORIZATION.value:
+            raise BadRequestException(
+                "This transfer is not awaiting OTP authorization."
+            )
+        result = await get_payment_provider().authorize_transfer(
+            withdrawal.transfer_reference, otp
+        )
+        our_status = normalize_transfer_status(result["status"])
+        now = datetime.now(timezone.utc)
+
+        if our_status == WithdrawalStatus.FAILED:
+            await self._fail_withdrawal(
+                withdrawal.transfer_reference, "Transfer failed during authorization."
+            )
+        else:
+            # async=true: the terminal state comes from the webhook/poll, not here.
+            # Conditional so a fast webhook that already resolved isn't clobbered.
+            await self.db.execute(
+                update(Withdrawal)
+                .where(
+                    Withdrawal.id == withdrawal.id,
+                    Withdrawal.status == WithdrawalStatus.PENDING_AUTHORIZATION.value,
+                )
+                .values(status=WithdrawalStatus.PROCESSING.value, updated_at=now)
+            )
+            await self.db.commit()
+        await self.db.refresh(withdrawal)
+        return withdrawal
+
+    async def resend_disbursement_otp(self, withdrawal: Withdrawal) -> None:
+        if withdrawal.status != WithdrawalStatus.PENDING_AUTHORIZATION.value:
+            raise BadRequestException(
+                "This transfer is not awaiting OTP authorization."
+            )
+        await get_payment_provider().resend_transfer_otp(withdrawal.transfer_reference)
+
+    # --- Terminal resolution (webhook + poll), idempotent ---
+    async def resolve_transfer_status(
+        self,
+        reference: str,
+        monnify_status: str,
+        monnify_reference: str = "",
+        description: str = "",
+    ) -> None:
+        our_status = normalize_transfer_status(monnify_status)
+        if our_status == WithdrawalStatus.COMPLETED:
+            await self._complete_withdrawal(reference, monnify_reference)
+        elif our_status == WithdrawalStatus.FAILED:
+            await self._fail_withdrawal(reference, description or monnify_status)
+        else:
+            # Non-terminal update (e.g. still processing) — advance from a pre-processing
+            # state only; never regress a terminal one.
+            await self.db.execute(
+                update(Withdrawal)
+                .where(
+                    Withdrawal.transfer_reference == reference,
+                    Withdrawal.status.in_(
+                        [
+                            WithdrawalStatus.INITIATED.value,
+                            WithdrawalStatus.PENDING_AUTHORIZATION.value,
+                        ]
+                    ),
+                )
+                .values(
+                    status=WithdrawalStatus.PROCESSING.value,
+                    updated_at=datetime.now(timezone.utc),
+                )
+            )
+            await self.db.commit()
+
+    async def poll_and_resolve_transfer(self, reference: str) -> None:
+        """Reconciliation fallback for a missed disbursement webhook."""
+        status = await get_payment_provider().get_transfer_status(reference)
+        await self.resolve_transfer_status(
+            reference,
+            status["status"],
+            status.get("monnify_reference", ""),
+            status.get("description", ""),
+        )
+
+    async def _complete_withdrawal(
+        self, reference: str, monnify_reference: str
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        # Atomically claim the withdrawal — only the first caller (webhook or poll)
+        # transitions it to COMPLETED and runs the pool debit. A duplicate delivery
+        # finds it already terminal and is a no-op.
+        claim = await self.db.execute(
+            update(Withdrawal)
+            .where(
+                Withdrawal.transfer_reference == reference,
+                Withdrawal.status.notin_(_TERMINAL),
+            )
+            .values(
+                status=WithdrawalStatus.COMPLETED.value,
+                monnify_transaction_reference=(
+                    monnify_reference or Withdrawal.monnify_transaction_reference
+                ),
+                updated_at=now,
+            )
+            .returning(
+                Withdrawal.id, Withdrawal.cooperative_id, Withdrawal.amount
+            )
+        )
+        row = claim.first()
+        if row is None:
+            return  # already resolved — idempotent
+        wid, coop_id, amount = row
+
+        # Debit the pool once, at COMPLETED, with the atomic fail-closed guard.
+        debit = await self.db.execute(
+            update(Cooperative)
+            .where(Cooperative.id == coop_id, Cooperative.pool_balance >= amount)
+            .values(pool_balance=Cooperative.pool_balance - amount)
+            .returning(Cooperative.pool_balance)
+        )
+        new_balance = debit.scalar_one_or_none()
+        if new_balance is None:
+            # Money already left the wallet but the pool can't cover it — critical
+            # reconciliation gap. Keep the completion (do not lose the transfer).
+            logger.critical(
+                "Pool debit failed at COMPLETED for withdrawal %s (ref=%s): pool "
+                "insufficient — manual reconciliation required.",
+                wid,
+                reference,
+            )
+            await self.db.commit()
+        else:
+            await self.db.execute(
+                update(Withdrawal)
+                .where(Withdrawal.id == wid)
+                .values(pool_balance_after=new_balance)
+            )
+            await self.db.commit()
+        await self._notify_exco_terminal(wid)
+
+    async def _fail_withdrawal(self, reference: str, reason: str) -> None:
+        claim = await self.db.execute(
+            update(Withdrawal)
+            .where(
+                Withdrawal.transfer_reference == reference,
+                Withdrawal.status.notin_(_TERMINAL),
+            )
+            .values(
+                status=WithdrawalStatus.FAILED.value,
+                failure_reason=(reason or "Transfer failed")[:500],
+                updated_at=datetime.now(timezone.utc),
+            )
+            .returning(Withdrawal.id)
+        )
+        wid = claim.scalar_one_or_none()
+        if wid is None:
+            return  # already terminal — no debit, idempotent
+        await self.db.commit()
+        await self._notify_exco_terminal(wid)
+
+    async def _notify_exco_terminal(self, withdrawal_id: UUID) -> None:
+        """Message the initiating exco with the outcome. Errors are logged, not raised."""
+        result = await self.db.execute(
+            select(Withdrawal).where(Withdrawal.id == withdrawal_id)
+        )
+        w = result.scalar_one_or_none()
+        if not w:
+            return
+        member_result = await self.db.execute(
+            select(Member).where(Member.id == w.authorized_by_member_id)
+        )
+        member = member_result.scalar_one_or_none()
+        if not member:
+            return
+
+        amount_naira = w.amount // 100
+        masked = _mask_account(w.destination_account_number)
+        if w.status == WithdrawalStatus.COMPLETED.value:
+            text = (
+                f"✅ Disbursement complete.\n₦{amount_naira:,} sent to "
+                f"{w.destination_account_name} ({masked}).\nRef: {w.transfer_reference}"
+            )
+        elif w.status == WithdrawalStatus.FAILED.value:
+            text = (
+                f"⚠️ Disbursement failed.\n₦{amount_naira:,} to {masked} was not sent.\n"
+                f"Reason: {w.failure_reason or 'unknown'}.\nThe pool was not debited."
+            )
+        else:
+            return
+
+        from app.services.whatsapp_service import send_text_message
+
+        try:
+            await send_text_message(member.phone_number, text)
+        except Exception as exc:  # noqa: BLE001 — notification is best-effort
+            logger.warning("Exco disbursement notification failed: %s", exc)

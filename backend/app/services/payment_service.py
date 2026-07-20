@@ -22,6 +22,13 @@ def generate_transaction_reference() -> str:
     return f"AJODA-{ts_ms}-{rand}"
 
 
+def generate_disbursement_reference() -> str:
+    """Generate a unique disbursement reference: AJODA-DISB-{timestamp_ms}-{6 hex}."""
+    ts_ms = int(time.time() * 1000)
+    rand = secrets.token_hex(3).upper()
+    return f"AJODA-DISB-{ts_ms}-{rand}"
+
+
 class PaymentService:
     def __init__(self, db):
         self.db = db

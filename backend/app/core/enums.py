@@ -18,6 +18,15 @@ class TransactionStatus(str, Enum):
     INVALIDATED = "invalidated"
 
 
+class WithdrawalStatus(str, Enum):
+    """Disbursement (money-out) state machine on the withdrawal record."""
+    INITIATED = "INITIATED"
+    PENDING_AUTHORIZATION = "PENDING_AUTHORIZATION"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
 class ReminderStage(str, Enum):
     SEVEN_DAY = "7_day"
     THREE_DAY = "3_day"
@@ -48,6 +57,7 @@ class ConversationFlow(str, Enum):
     PAY_SELECTION = "PAY_SELECTION"
     BROADCAST = "BROADCAST"
     MEMBER_LOOKUP = "MEMBER_LOOKUP"
+    DISBURSE = "DISBURSE"  # exco-only money-out flow (Phase 5). Value MUST equal Intent.DISBURSE.
 
 
 class StepUpAction(str, Enum):
@@ -85,4 +95,7 @@ class Intent(str, Enum):
     GREETING = "GREETING"
     SHOW_SWITCHER = "SHOW_SWITCHER"
     SHOW_MENU = "SHOW_MENU"
+    DISBURSE = "DISBURSE"
+    CONFIRM_DISBURSE = "CONFIRM_DISBURSE"
+    DISBURSE_RESEND_OTP = "DISBURSE_RESEND_OTP"
     UNKNOWN = "UNKNOWN"

@@ -17,6 +17,7 @@ from app.repositories.payment_repository import PaymentRepository
 from app.services.monnify_provider import verify_monnify_webhook_signature
 from app.services.payment_provider import get_payment_provider
 from app.services.payment_service import PaymentService
+from app.services.withdrawal_service import WithdrawalService
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 settings = get_settings()
@@ -301,6 +302,23 @@ async def _send_payment_failure_message(transaction) -> None:
             )
 
 
+async def _resolve_disbursement(
+    reference: str, monnify_status: str, monnify_reference: str, description: str
+) -> None:
+    """
+    Resolve a disbursement's terminal status from the webhook. Runs as a
+    BackgroundTask with its own session; idempotent via the atomic state transition.
+    """
+    async with AsyncSessionFactory() as db:
+        try:
+            await WithdrawalService(db).resolve_transfer_status(
+                reference, monnify_status, monnify_reference, description
+            )
+        except Exception:
+            await db.rollback()
+            logger.exception("Disbursement resolution failed for ref=%s", reference)
+
+
 # Routes
 @router.get("/initiate/{reference}", include_in_schema=False)
 async def payment_initiate(
@@ -406,6 +424,48 @@ async def payment_webhook(
         txnref = str(event_data.get("paymentReference", "")).strip()
         if txnref:
             background_tasks.add_task(_verify_and_process_payment, txnref)
+
+    return Response(status_code=200)
+
+
+@router.post("/disbursement/webhook")
+async def disbursement_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> Response:
+    """
+    Monnify disbursement (transfer-status) webhook — source of truth for terminal
+    status. Same `monnify-signature` (HMAC-SHA512) scheme as collections. Resolution
+    is idempotent (atomic state transition + reused reference), so retries are safe.
+    Always returns bare 200.
+    """
+    raw_body = await request.body()
+    signature = request.headers.get("monnify-signature", "")
+
+    if not verify_monnify_webhook_signature(raw_body, signature):
+        logger.warning("Monnify disbursement webhook signature verification failed")
+        return Response(status_code=200)
+
+    try:
+        payload = json.loads(raw_body)
+    except Exception:
+        return Response(status_code=200)
+
+    event_type = payload.get("eventType", "")
+    if event_type in (
+        "SUCCESSFUL_DISBURSEMENT",
+        "FAILED_DISBURSEMENT",
+        "REVERSED_DISBURSEMENT",
+    ):
+        event_data = payload.get("eventData", {})
+        reference = str(event_data.get("reference", "")).strip()  # our AJODA-DISB ref
+        status = str(event_data.get("status", "")).strip()
+        monnify_reference = str(event_data.get("transactionReference", "")).strip()
+        description = str(event_data.get("transactionDescription", "")).strip()
+        if reference:
+            background_tasks.add_task(
+                _resolve_disbursement, reference, status, monnify_reference, description
+            )
 
     return Response(status_code=200)
 

@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     monnify_secret_key: str = ""
     monnify_contract_code: str = ""
     monnify_wallet_account_number: str = ""  # disbursement wallet / transfer source
+    # Wallet-side buffer (kobo) added to the amount when checking disbursement-wallet
+    # sufficiency, since the exact Monnify transfer fee is only known after initiation.
+    monnify_transfer_fee_buffer_kobo: int = 20000  # ₦200
 
     # AI
     gemini_api_key: str = ""

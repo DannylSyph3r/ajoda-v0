@@ -2,8 +2,9 @@
 MonnifyProvider — the prototype's single PaymentProvider implementation.
 
 Phase 1 implements OAuth2 auth (cached) + collections (initialize, verify) and
-the collection-webhook signature check. Disbursement methods are declared on the
-interface but raise NotImplementedException until Phase 3.
+the collection-webhook signature check. Phase 3 adds disbursement: get banks
+(cached), name enquiry, wallet balance, initiate single transfer (async), authorize
+transfer (OTP), and transfer-status poll.
 
 All outbound HTTP follows the base convention: a per-call httpx.AsyncClient with
 an explicit timeout, no shared/pooled client (see CLAUDE §8). OAuth2 token
@@ -22,7 +23,7 @@ from decimal import ROUND_HALF_UP, Decimal
 import httpx
 
 from app.core.config import get_settings
-from app.core.exceptions import InternalServerException, NotImplementedException
+from app.core.exceptions import BadRequestException, InternalServerException
 from app.services.payment_provider import PaymentProvider
 
 settings = get_settings()
@@ -35,6 +36,10 @@ _TOKEN_SKEW = 60  # refresh this many seconds before the token actually expires
 # one coroutine fetches a fresh token at a time.
 _token_state: dict = {"token": None, "expires_at": 0.0}
 _token_lock = asyncio.Lock()
+
+# In-process cache for the bank list (effectively static).
+_banks_cache: dict = {"banks": None}
+_banks_lock = asyncio.Lock()
 
 
 def _kobo_to_naira(amount_kobo: int) -> float:
@@ -220,14 +225,94 @@ class MonnifyProvider(PaymentProvider):
     # ------------------------------------------------------------------ #
     # Disbursement (Phase 3)
     # ------------------------------------------------------------------ #
+    async def _call(
+        self, method: str, url: str, action: str, *, params=None, json=None
+    ) -> dict:
+        """
+        Low-level authed request. Raises InternalServerException on transport/parse
+        errors but does NOT raise on a 4xx — the caller inspects `requestSuccessful`
+        / `responseMessage` so validation failures (e.g. an invalid account) can be
+        surfaced as clean user-facing messages rather than opaque 500s.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                resp = await client.request(
+                    method,
+                    url,
+                    headers=await self._authed_headers(),
+                    params=params,
+                    json=json,
+                )
+        except InternalServerException:
+            raise
+        except Exception:
+            logger.exception("Monnify %s transport error", action)
+            raise InternalServerException(
+                f"Could not reach the payment provider to {action}"
+            )
+        try:
+            return resp.json()
+        except Exception:
+            logger.error("Monnify %s returned non-JSON (HTTP %s)", action, resp.status_code)
+            raise InternalServerException(
+                f"The payment provider returned an invalid response for {action}"
+            )
+
     async def get_banks(self) -> list[dict]:
-        raise NotImplementedException("Disbursement (get_banks) is implemented in Phase 3")
+        if _banks_cache["banks"] is not None:
+            return _banks_cache["banks"]
+        async with _banks_lock:
+            if _banks_cache["banks"] is not None:
+                return _banks_cache["banks"]
+            body = await self._call("GET", f"{self.base_url}/api/v1/banks", "list banks")
+            if not body.get("requestSuccessful"):
+                logger.error("Monnify get-banks rejected: %s", body.get("responseMessage"))
+                raise InternalServerException("Could not retrieve the bank list")
+            banks = [
+                {"code": b.get("code"), "name": b.get("name")}
+                for b in (body.get("responseBody") or [])
+                if b.get("code")
+            ]
+            _banks_cache["banks"] = banks
+            return banks
 
     async def name_enquiry(self, account_number: str, bank_code: str) -> dict:
-        raise NotImplementedException("Disbursement (name_enquiry) is implemented in Phase 3")
+        body = await self._call(
+            "GET",
+            f"{self.base_url}/api/v2/disbursements/account/validate",
+            "validate account",
+            params={"accountNumber": account_number, "bankCode": bank_code},
+        )
+        if not body.get("requestSuccessful"):
+            # 404 / validation failure — a user-facing "bad account", not a 500.
+            raise BadRequestException(
+                body.get("responseMessage")
+                or "Could not verify that account. Check the number and bank."
+            )
+        rb = body.get("responseBody") or {}
+        name = rb.get("accountName")
+        if not name:
+            raise BadRequestException(
+                "The account name could not be resolved for that account."
+            )
+        return {
+            "account_name": name,
+            "account_number": rb.get("accountNumber", account_number),
+            "bank_code": rb.get("bankCode", bank_code),
+        }
 
     async def wallet_balance(self) -> dict:
-        raise NotImplementedException("Disbursement (wallet_balance) is implemented in Phase 3")
+        body = await self._call(
+            "GET",
+            f"{self.base_url}/api/v2/disbursements/wallet-balance",
+            "fetch wallet balance",
+            params={"accountNumber": settings.monnify_wallet_account_number},
+        )
+        if not body.get("requestSuccessful"):
+            logger.error("Monnify wallet-balance rejected: %s", body.get("responseMessage"))
+            raise InternalServerException("Could not fetch the disbursement wallet balance")
+        rb = body.get("responseBody") or {}
+        return {"available_kobo": _naira_to_kobo(rb.get("availableBalance", 0) or 0), "raw": rb}
 
     async def initiate_transfer(
         self,
@@ -239,7 +324,80 @@ class MonnifyProvider(PaymentProvider):
         account_name: str,
         narration: str,
     ) -> dict:
-        raise NotImplementedException("Disbursement (initiate_transfer) is implemented in Phase 3")
+        payload = {
+            "amount": _kobo_to_naira(amount_kobo),
+            "reference": reference,
+            "narration": narration,
+            "destinationBankCode": bank_code,
+            "destinationAccountNumber": account_number,
+            "destinationAccountName": account_name,
+            "currency": "NGN",
+            "sourceAccountNumber": settings.monnify_wallet_account_number,
+            "async": True,
+        }
+        body = await self._call(
+            "POST",
+            f"{self.base_url}/api/v2/disbursements/single",
+            "initiate transfer",
+            json=payload,
+        )
+        if not body.get("requestSuccessful"):
+            # Rejected (bad account, duplicate reference, etc.) — surface the reason.
+            raise BadRequestException(
+                body.get("responseMessage") or "The transfer could not be initiated."
+            )
+        rb = body.get("responseBody") or {}
+        return {
+            "status": rb.get("status", ""),
+            "fee_kobo": _naira_to_kobo(rb.get("totalFee", 0) or 0),
+            "raw": rb,
+        }
 
     async def authorize_transfer(self, reference: str, otp: str) -> dict:
-        raise NotImplementedException("Disbursement (authorize_transfer) is implemented in Phase 3")
+        body = await self._call(
+            "POST",
+            f"{self.base_url}/api/v2/disbursements/single/validate-otp",
+            "authorize transfer",
+            json={"reference": reference, "authorizationCode": otp},
+        )
+        if not body.get("requestSuccessful"):
+            raise BadRequestException(
+                body.get("responseMessage") or "The OTP could not be validated."
+            )
+        rb = body.get("responseBody") or {}
+        return {
+            "status": rb.get("status", ""),
+            "fee_kobo": _naira_to_kobo(rb.get("totalFee", 0) or 0),
+            "raw": rb,
+        }
+
+    async def resend_transfer_otp(self, reference: str) -> dict:
+        body = await self._call(
+            "POST",
+            f"{self.base_url}/api/v2/disbursements/single/resend-otp",
+            "resend OTP",
+            json={"reference": reference},
+        )
+        if not body.get("requestSuccessful"):
+            raise BadRequestException(
+                body.get("responseMessage") or "Could not resend the OTP."
+            )
+        return {"raw": body.get("responseBody") or {}}
+
+    async def get_transfer_status(self, reference: str) -> dict:
+        body = await self._call(
+            "GET",
+            f"{self.base_url}/api/v2/disbursements/single/summary",
+            "check transfer status",
+            params={"reference": reference},
+        )
+        if not body.get("requestSuccessful"):
+            raise InternalServerException("Could not fetch the transfer status")
+        rb = body.get("responseBody") or {}
+        return {
+            "status": rb.get("status", ""),
+            "fee_kobo": _naira_to_kobo(rb.get("fee", 0) or 0),
+            "monnify_reference": rb.get("transactionReference", ""),
+            "description": rb.get("transactionDescription", ""),
+            "raw": rb,
+        }
