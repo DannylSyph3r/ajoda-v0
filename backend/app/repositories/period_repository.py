@@ -2,8 +2,10 @@ from datetime import date, datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import and_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import NotFoundException
 from app.models.contribution import Contribution
 from app.models.contribution_period import ContributionPeriod
 
@@ -20,6 +22,24 @@ class PeriodRepository:
                 ContributionPeriod.closed_at.is_(None),
             )
             .order_by(ContributionPeriod.period_number.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_current_period(self, coop_id: UUID) -> ContributionPeriod | None:
+        """
+        The current period cursor: the LOWEST-numbered still-open period. A future
+        period materialised by a pay-ahead is also open (closed_at IS NULL), so the
+        cursor is the earliest open period, not the latest. Distinct from
+        get_open_period (highest open), which the scheduler path relies on.
+        """
+        result = await self.db.execute(
+            select(ContributionPeriod)
+            .where(
+                ContributionPeriod.cooperative_id == coop_id,
+                ContributionPeriod.closed_at.is_(None),
+            )
+            .order_by(ContributionPeriod.period_number.asc())
             .limit(1)
         )
         return result.scalar_one_or_none()
@@ -45,11 +65,76 @@ class PeriodRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_numbers(
+        self, coop_id: UUID, numbers: list[int]
+    ) -> list[ContributionPeriod]:
+        """
+        Fetch existing period rows for a bounded set of period_numbers in one
+        query. Cost is bounded by the (small) `numbers` list and served by the
+        UNIQUE(cooperative_id, period_number) index — never a scan driven by the
+        size of contribution_periods.
+        """
+        if not numbers:
+            return []
+        result = await self.db.execute(
+            select(ContributionPeriod).where(
+                ContributionPeriod.cooperative_id == coop_id,
+                ContributionPeriod.period_number.in_(numbers),
+            )
+        )
+        return list(result.scalars().all())
+
     async def get_by_id(self, period_id: UUID) -> ContributionPeriod | None:
         result = await self.db.execute(
             select(ContributionPeriod).where(ContributionPeriod.id == period_id)
         )
         return result.scalar_one_or_none()
+
+    async def get_or_create_by_number(
+        self,
+        coop_id: UUID,
+        schedule_id: UUID,
+        period_number: int,
+        start_date: date,
+        due_date: date,
+    ) -> ContributionPeriod:
+        """
+        Idempotently find-or-create a period by (cooperative_id, period_number).
+
+        Uses INSERT ... ON CONFLICT DO NOTHING against the existing
+        UNIQUE(cooperative_id, period_number) constraint. If this call inserted,
+        the new id is returned; if the row already existed (or a concurrent writer
+        won the race), the conflict is a no-op and we read the existing row. Two
+        members paying the same future period therefore cannot double-create it —
+        the unique index serialises them.
+        """
+        stmt = (
+            pg_insert(ContributionPeriod)
+            .values(
+                cooperative_id=coop_id,
+                schedule_id=schedule_id,
+                period_number=period_number,
+                start_date=start_date,
+                due_date=due_date,
+            )
+            .on_conflict_do_nothing(
+                index_elements=["cooperative_id", "period_number"]
+            )
+            .returning(ContributionPeriod.id)
+        )
+        result = await self.db.execute(stmt)
+        new_id = result.scalar_one_or_none()
+        if new_id is not None:
+            created = await self.get_by_id(new_id)
+            if created is not None:
+                return created
+
+        existing = await self.get_by_number(coop_id, period_number)
+        if existing is None:
+            raise NotFoundException(
+                f"Could not resolve period {period_number} for cooperative {coop_id}"
+            )
+        return existing
 
     async def create(
         self,

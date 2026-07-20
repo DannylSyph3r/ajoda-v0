@@ -1,6 +1,7 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import RiskLevel
@@ -12,11 +13,31 @@ class ContributionRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create_bulk(self, contributions: list[dict]) -> None:
+    async def create_bulk(self, contributions: list[dict]) -> list[UUID]:
+        """
+        Idempotently bulk-insert contribution rows. A member who paid ahead may
+        already hold a contribution for a future period that the scheduler later
+        back-fills for all members; ON CONFLICT (member_id, period_id) DO NOTHING
+        skips those rather than aborting the whole period-close transaction.
+
+        Returns the member_ids for which a row was actually inserted (conflicts are
+        excluded), so the caller schedules reminders only for genuinely new
+        contributions — not for pay-ahead members who already have one.
+        """
         if not contributions:
-            return
-        self.db.add_all([Contribution(**c) for c in contributions])
-        await self.db.flush()
+            return []
+        rows = []
+        for c in contributions:
+            row = dict(c)
+            row.setdefault("id", uuid4())
+            rows.append(row)
+        result = await self.db.execute(
+            pg_insert(Contribution)
+            .values(rows)
+            .on_conflict_do_nothing(index_elements=["member_id", "period_id"])
+            .returning(Contribution.member_id)
+        )
+        return [row[0] for row in result.all()]
 
     async def get_member_balance(self, member_id: UUID, coop_id: UUID) -> dict:
         totals_result = await self.db.execute(
@@ -128,6 +149,24 @@ class ContributionRepository:
             if pid not in mapping:
                 mapping[pid] = row.reference
         return mapping
+
+    async def get_paid_period_ids(
+        self, member_id: UUID, period_ids: list[UUID]
+    ) -> set[UUID]:
+        """
+        Return the subset of `period_ids` the member has a PAID contribution for.
+        Cost is bounded by the (small) period_ids list, not by table size.
+        """
+        if not period_ids:
+            return set()
+        result = await self.db.execute(
+            select(Contribution.period_id).where(
+                Contribution.member_id == member_id,
+                Contribution.period_id.in_(period_ids),
+                Contribution.status == "paid",
+            )
+        )
+        return {row[0] for row in result.all()}
 
     async def get_amounts_for_periods(
         self, member_id: UUID, period_ids: list[UUID]

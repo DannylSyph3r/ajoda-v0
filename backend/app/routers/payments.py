@@ -2,55 +2,27 @@ import json
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionFactory, get_db
 from app.core.dependencies import get_current_member
-from app.core.exceptions import BadRequestException, NotFoundException
+from app.core.exceptions import AppException, BadRequestException, NotFoundException
 from app.core.responses import ApiResponse
 from app.models.member import Member
 from app.repositories.cooperative_repository import CooperativeRepository
 from app.repositories.member_repository import MemberRepository
 from app.repositories.payment_repository import PaymentRepository
-from app.services.payment_service import (
-    PaymentService,
-    verify_interswitch_webhook_signature,
-)
+from app.services.monnify_provider import verify_monnify_webhook_signature
+from app.services.payment_provider import get_payment_provider
+from app.services.payment_service import PaymentService
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 settings = get_settings()
 logger = logging.getLogger("akoweai")
 
 # HTML pages
-_INITIATE_FORM_TEMPLATE = """<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Ajoda — Redirecting to payment...</title>
-    <style>
-        body {{ font-family: sans-serif; display: flex; justify-content: center;
-               align-items: center; min-height: 100vh; margin: 0; background: #f5f5f5; }}
-        p {{ color: #555; }}
-    </style>
-</head>
-<body>
-    <p>Redirecting to secure payment page...</p>
-    <form id="f" method="post" action="{action_url}">
-        <input type="hidden" name="merchant_code" value="{merchant_code}">
-        <input type="hidden" name="pay_item_id" value="{pay_item_id}">
-        <input type="hidden" name="txn_ref" value="{txn_ref}">
-        <input type="hidden" name="amount" value="{amount}">
-        <input type="hidden" name="currency" value="566">
-        <input type="hidden" name="cust_name" value="{cust_name}">
-        <input type="hidden" name="site_redirect_url" value="{redirect_url}">
-    </form>
-    <script>document.getElementById('f').submit();</script>
-</body>
-</html>"""
-
 _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
 <html>
 <head>
@@ -183,7 +155,7 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
         <a id="action-btn" class="action-btn" href="#">Loading&hellip;</a>
         <p id="close-msg" class="close-msg">You may now close this tab.</p>
-        <div class="footer">Powered by Ajoda &middot; Secured by Interswitch</div>
+        <div class="footer">Powered by Ajoda &middot; Secured by Monnify</div>
     </div>
     <script>
         (function () {{
@@ -215,54 +187,65 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
 
 
 # Background task — runs after response is sent, owns its own DB session
-async def _verify_and_process_payment(txnref: str, posted_amount: int) -> None:
+async def _verify_and_process_payment(txnref: str) -> None:
     """
-    Requery Interswitch, validate the amount, and process or mark the payment.
-    Runs as a BackgroundTask — creates its own DB session.
+    Verify a transaction with Monnify (source of truth) and settle it idempotently.
+    Runs as a BackgroundTask — creates its own DB session. Value is never delivered
+    on a browser callback; the provider is always requeried first, and settlement
+    is gated on an atomic pending->paid transition so duplicate webhook/poll
+    deliveries cannot double-credit.
     """
     async with AsyncSessionFactory() as db:
         try:
             payment_repo = PaymentRepository(db)
             payment_svc = PaymentService(db)
 
-            # Idempotency guard
+            # Cheap early-out for an already-settled duplicate. The authoritative
+            # idempotency guard is settle_if_pending() below.
             if await payment_repo.is_already_paid(txnref):
                 return
 
             transaction = await payment_repo.get_by_reference(txnref)
             if not transaction:
-                logger.error("Payment redirect received for unknown reference: %s", txnref)
+                logger.error("Payment callback received for unknown reference: %s", txnref)
                 return
 
-            # Requery Interswitch for authoritative status
+            # Mandatory server-side verify with Monnify for authoritative status
             try:
-                status_data = await payment_svc.poll_transaction_status(
-                    txnref, transaction.amount
-                )
+                result = await payment_svc.poll_transaction_status(txnref)
             except Exception:
-                logger.exception("Interswitch requery failed for ref=%s", txnref)
+                logger.exception("Monnify verify failed for ref=%s", txnref)
                 return
 
-            response_code = status_data.get("ResponseCode", "")
-            returned_amount = status_data.get("Amount", 0)
+            status = result.get("status", "")
+            returned_kobo = int(result.get("amount_kobo", 0))
 
-            if response_code in ("00", "10", "11"):
+            if status == "PAID":
                 # Amount must match what was on the original payment request
-                if int(returned_amount) != int(transaction.amount):
+                if returned_kobo != int(transaction.amount):
                     logger.error(
-                        "Amount mismatch for %s: expected %d kobo, Interswitch returned %d",
-                        txnref, transaction.amount, returned_amount,
+                        "Amount mismatch for %s: expected %d kobo, Monnify returned %d",
+                        txnref, transaction.amount, returned_kobo,
                     )
-                    await payment_repo.mark_failed(txnref)
-                    await db.commit()
-                    await _send_payment_failure_message(transaction)
+                    if await payment_repo.fail_if_pending(txnref):
+                        await db.commit()
+                        await _send_payment_failure_message(transaction)
                     return
 
-                await payment_svc.process_successful_payment(transaction)
-                await db.commit()
-                await _send_payment_receipt(transaction)
-            else:
-                await payment_repo.mark_failed(txnref)
+                # Atomic settle — only the caller that flips pending->paid runs the
+                # money side-effects; a duplicate delivery is a no-op.
+                if await payment_repo.settle_if_pending(txnref):
+                    await payment_svc.process_successful_payment(transaction)
+                    await db.commit()
+                    await _send_payment_receipt(transaction)
+                return
+
+            if status in ("PENDING", "AWAITING_PAYMENT", ""):
+                # Not resolved yet — leave pending; a later webhook/poll settles it.
+                return
+
+            # FAILED / EXPIRED / REVERSED / PARTIALLY_PAID / OVERPAID -> not settled
+            if await payment_repo.fail_if_pending(txnref):
                 await db.commit()
                 await _send_payment_failure_message(transaction)
 
@@ -323,10 +306,13 @@ async def _send_payment_failure_message(transaction) -> None:
 async def payment_initiate(
     reference: str,
     db: AsyncSession = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     """
-    Bridge page: opens in WhatsApp IAB, auto-submits form to Interswitch WebPay.
-    Unauthenticated — the reference is an opaque token.
+    Bridge endpoint: opens in the WhatsApp in-app browser and 302-redirects to the
+    Monnify hosted checkout. Kept on our own (Meta-whitelisted) domain rather than
+    linking to Monnify directly. Unauthenticated — the reference is an opaque token.
+    A fresh checkoutUrl is minted on each tap, so Monnify's 40-minute link expiry
+    is a non-issue.
     """
     payment_repo = PaymentRepository(db)
     transaction = await payment_repo.get_by_reference(reference)
@@ -336,49 +322,52 @@ async def payment_initiate(
             status_code=410,
         )
 
-    member_repo = MemberRepository(db)
-    member = await member_repo.get_by_id(transaction.member_id)
-
-    coop_repo = CooperativeRepository(db)
-    coop = await coop_repo.get_by_id(transaction.cooperative_id)
+    member = await MemberRepository(db).get_by_id(transaction.member_id)
+    coop = await CooperativeRepository(db).get_by_id(transaction.cooperative_id)
 
     member_name = member.full_name if member else "Member"
     coop_name = coop.name if coop else "Cooperative"
-    cust_name = f"{member_name} - {coop_name}"
 
-    html = _INITIATE_FORM_TEMPLATE.format(
-        action_url=f"{settings.interswitch_base_url}/collections/w/pay",
-        merchant_code=settings.interswitch_merchant_code,
-        pay_item_id=settings.interswitch_pay_item_id,
-        txn_ref=reference,
-        amount=transaction.amount,
-        cust_name=cust_name,
-        redirect_url=f"{settings.prod_url}/api/payments/redirect",
+    # Members have no email on file; synthesize a deterministic, non-PII address so
+    # Monnify has a required value. Digits-only phone keeps the local part valid.
+    phone_digits = "".join(
+        ch for ch in (member.phone_number if member else "") if ch.isdigit()
     )
-    return HTMLResponse(content=html)
-
-
-@router.post("/redirect", include_in_schema=False)
-async def payment_redirect(
-    request: Request,
-    background_tasks: BackgroundTasks,
-) -> HTMLResponse:
-    """
-    Receives Interswitch's browser-side form POST after payment attempt.
-    Always returns 200 with an HTML completion page.
-    Payment verification runs as a background task.
-    """
-    form_data = await request.form()
-    txnref = str(form_data.get("txnref", "")).strip()
-    amount_str = str(form_data.get("amount", "0")).strip()
+    customer_email = f"{phone_digits or 'member'}@ajoda.app"
 
     try:
-        amount = int(amount_str)
-    except ValueError:
-        amount = 0
+        init = await get_payment_provider().initialize_transaction(
+            reference=reference,
+            amount_kobo=transaction.amount,
+            customer_name=f"{member_name} - {coop_name}",
+            customer_email=customer_email,
+            redirect_url=f"{settings.prod_url}/api/payments/redirect?ref={reference}",
+        )
+    except AppException:
+        logger.exception("Monnify initialize failed for ref=%s", reference)
+        return HTMLResponse(
+            content="<html><body><p>We could not start your payment right now. "
+            "Please return to WhatsApp and try again.</p></body></html>",
+            status_code=502,
+        )
 
+    return RedirectResponse(url=init["checkout_url"], status_code=302)
+
+
+@router.get("/redirect", include_in_schema=False)
+async def payment_redirect(
+    background_tasks: BackgroundTasks,
+    ref: str = "",
+) -> HTMLResponse:
+    """
+    Browser return from Monnify checkout (a GET with result query params). We never
+    settle on these params \u2014 we schedule a server-side verify keyed on our own `ref`,
+    which we embedded in the redirectUrl at initialization. Always returns the HTML
+    completion page.
+    """
+    txnref = ref.strip()
     if txnref:
-        background_tasks.add_task(_verify_and_process_payment, txnref, amount)
+        background_tasks.add_task(_verify_and_process_payment, txnref)
 
     return HTMLResponse(
         content=_COMPLETION_HTML_TEMPLATE.format(txnref=txnref or "\u2014")
@@ -391,15 +380,19 @@ async def payment_webhook(
     background_tasks: BackgroundTasks,
 ) -> Response:
     """
-    Interswitch webhook endpoint.
-    Verifies X-Interswitch-Signature (HMAC-SHA512 of raw body).
-    Always returns bare 200 — Interswitch discards any response body.
+    Monnify collection webhook. Verifies the `monnify-signature` header
+    (HMAC-SHA512 of the raw body, keyed with the Secret Key — there is no separate
+    webhook-signing secret). Settlement runs through a server-side verify + atomic
+    transition, so a duplicate delivery is a no-op. Always returns bare 200.
+
+    [!] The signature scheme is confirmed by recomputing the hash against a captured
+    sandbox webhook (see verify_monnify_webhook_signature) before it is trusted.
     """
     raw_body = await request.body()
-    signature = request.headers.get("X-Interswitch-Signature", "")
+    signature = request.headers.get("monnify-signature", "")
 
-    if not verify_interswitch_webhook_signature(raw_body, signature):
-        logger.warning("Interswitch webhook signature verification failed")
+    if not verify_monnify_webhook_signature(raw_body, signature):
+        logger.warning("Monnify webhook signature verification failed")
         return Response(status_code=200)
 
     try:
@@ -407,13 +400,12 @@ async def payment_webhook(
     except Exception:
         return Response(status_code=200)
 
-    event_type = payload.get("event", "")
-    if event_type == "TRANSACTION.COMPLETED":
-        event_data = payload.get("data", {})
-        txnref = event_data.get("merchantReference", "")
-        amount = int(event_data.get("amount", 0))
+    event_type = payload.get("eventType", "")
+    if event_type == "SUCCESSFUL_TRANSACTION":
+        event_data = payload.get("eventData", {})
+        txnref = str(event_data.get("paymentReference", "")).strip()
         if txnref:
-            background_tasks.add_task(_verify_and_process_payment, txnref, amount)
+            background_tasks.add_task(_verify_and_process_payment, txnref)
 
     return Response(status_code=200)
 

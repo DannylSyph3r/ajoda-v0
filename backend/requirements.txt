@@ -24,3 +24,7 @@ google-adk==1.27.2
 python-dotenv==1.0.1
 python-dateutil==2.9.0.post0
 pydantic-settings==2.13.1
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.25.0

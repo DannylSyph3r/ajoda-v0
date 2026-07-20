@@ -19,13 +19,6 @@ class Settings(BaseSettings):
     meta_verify_token: str
     meta_app_secret: str  # X-Hub-Signature-256 webhook verification
 
-    # Interswitch
-    interswitch_merchant_code: str = ""
-    interswitch_pay_item_id: str = ""
-    interswitch_webhook_secret: str = ""  # Webhook HMAC-SHA512 signing key
-    interswitch_base_url: str = "https://newwebpay.qa.interswitchng.com"
-    interswitch_query_url: str = "https://qa.interswitchng.com/collections/api/v1/gettransaction.json"
-
     # Monnify (PSP — collections + disbursement). Sandbox base by default; flip to
     # https://api.monnify.com for live via env. No separate webhook-signing secret —
     # Monnify signs webhooks with the Secret Key.

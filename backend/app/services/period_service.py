@@ -8,6 +8,7 @@ from app.core.enums import Frequency
 from app.models.contribution import Contribution
 from app.models.contribution_period import ContributionPeriod
 from app.models.coop_member import CoopMember
+from app.models.coop_schedule import CoopSchedule
 from app.repositories.contribution_repository import ContributionRepository
 from app.repositories.cooperative_repository import CooperativeRepository
 from app.repositories.period_repository import PeriodRepository
@@ -72,7 +73,10 @@ class PeriodService:
 
         coop = await self.coop_repo.get_by_id(period.cooperative_id)
 
-        await self.contribution_repo.create_bulk([
+        # Idempotent: skips members who already hold a contribution for this period
+        # (e.g. a pay-ahead materialised it). Returns only genuinely-new member_ids
+        # so reminders are not scheduled for members who already paid ahead.
+        member_ids = await self.contribution_repo.create_bulk([
             {
                 "member_id": cm.member_id,
                 "cooperative_id": period.cooperative_id,
@@ -85,7 +89,6 @@ class PeriodService:
 
         await self.db.commit()
 
-        member_ids = [cm.member_id for cm in active_members]
         return next_period, member_ids
 
     async def close_overdue_periods(self) -> dict:
@@ -122,37 +125,23 @@ class PeriodService:
 
         return {"closed": closed_count, "created": created_count}
 
-    async def generate_future_periods(
-        self, coop_id: UUID, count: int
-    ) -> list[ContributionPeriod]:
+    async def get_or_create_period_by_number(
+        self, coop_id: UUID, schedule: CoopSchedule, period_number: int
+    ) -> ContributionPeriod:
         """
-        Persist future periods on demand (find-or-create by period_number).
-        Called at payment initiation time — not during the payable list read.
+        Idempotently find-or-create a single future period, bound by its explicit
+        `period_number` (never positionally). Dates are recomputed deterministically
+        from the schedule so a period_number always maps to the same dates and two
+        members paying the same future period cannot double-create it.
         """
-        schedule = await self.schedule_service.get_active_schedule(coop_id)
-        latest_number = await self.period_repo.get_latest_period_number(coop_id)
-
-        periods: list[ContributionPeriod] = []
-        for i in range(1, count + 1):
-            future_number = latest_number + i
-            existing = await self.period_repo.get_by_number(coop_id, future_number)
-            if existing:
-                periods.append(existing)
-                continue
-
-            start_date, due_date = compute_next_period_dates(
-                schedule, latest_number + i - 1
-            )
-            period = await self.period_repo.create(
-                coop_id=coop_id,
-                schedule_id=schedule.id,
-                period_number=future_number,
-                start_date=start_date,
-                due_date=due_date,
-            )
-            periods.append(period)
-
-        return periods
+        start_date, due_date = compute_next_period_dates(schedule, period_number - 1)
+        return await self.period_repo.get_or_create_by_number(
+            coop_id=coop_id,
+            schedule_id=schedule.id,
+            period_number=period_number,
+            start_date=start_date,
+            due_date=due_date,
+        )
 
     async def get_member_debt_periods(
         self, member_id: UUID, coop_id: UUID
@@ -193,43 +182,70 @@ class PeriodService:
                 "is_future": False,
             })
 
-        # --- Current open period (only if member has not already paid for it) ---
-        open_period = await self.period_repo.get_open_period(coop_id)
-        if open_period:
+        # --- Current period (only if member has not already paid for it) ---
+        # The current period is the LOWEST-numbered open period. Materialising a
+        # future period (pay-ahead) also leaves it open (closed_at IS NULL), so the
+        # highest open period is not the cursor — the earliest open one is.
+        current_period = await self.period_repo.get_current_period(coop_id)
+        if current_period:
             paid_check = await self.db.execute(
                 select(Contribution.id).where(
                     Contribution.member_id == member_id,
-                    Contribution.period_id == open_period.id,
+                    Contribution.period_id == current_period.id,
                     Contribution.status == "paid",
                 )
             )
             if paid_check.scalar_one_or_none() is None:
                 end_date = compute_period_end_date(
-                    schedule.anchor_date, freq, open_period.period_number
+                    schedule.anchor_date, freq, current_period.period_number
                 )
                 result.append({
-                    "id": open_period.id,
-                    "period_number": open_period.period_number,
-                    "start_date": open_period.start_date,
-                    "due_date": open_period.due_date,
+                    "id": current_period.id,
+                    "period_number": current_period.period_number,
+                    "start_date": current_period.start_date,
+                    "due_date": current_period.due_date,
                     "amount": coop.contribution_amount,
                     "label": format_period_label(
-                        open_period.period_number, open_period.start_date, end_date
+                        current_period.period_number, current_period.start_date, end_date
                     ),
                     "is_debt": False,
                     "is_future": False,
                 })
 
-        # --- Up to 3 future periods (computed, not persisted) ---
-        latest_number = await self.period_repo.get_latest_period_number(coop_id)
-        for i in range(1, 4):
-            future_number = latest_number + i
-            start_date, due_date = compute_next_period_dates(
-                schedule, latest_number + i - 1
-            )
+        # --- Up to 3 unpaid future periods, anchored on the current-period cursor ---
+        # Anchor on the current period (scheduler-advanced), NOT MAX(period_number):
+        # one member materialising future rows by paying ahead must not shift any
+        # other member's projected window. Periods the member has already paid
+        # (materialised by a prior pay-ahead) are skipped so they are not re-offered.
+        base_number = (
+            current_period.period_number
+            if current_period
+            else await self.period_repo.get_latest_period_number(coop_id)
+        )
+        LOOKAHEAD = 10  # bounded scan to find 3 still-unpaid future periods
+        candidate_numbers = [base_number + i for i in range(1, LOOKAHEAD + 1)]
+        existing_future = {
+            p.period_number: p
+            for p in await self.period_repo.get_by_numbers(coop_id, candidate_numbers)
+        }
+        paid_future_ids = await self.contribution_repo.get_paid_period_ids(
+            member_id, [p.id for p in existing_future.values()]
+        )
+
+        collected = 0
+        for i in range(1, LOOKAHEAD + 1):
+            if collected >= 3:
+                break
+            future_number = base_number + i
+            existing = existing_future.get(future_number)
+            if existing is not None and existing.id in paid_future_ids:
+                continue  # member already paid this future period — don't re-offer
+            start_date, due_date = compute_next_period_dates(schedule, future_number - 1)
             end_date = compute_period_end_date(schedule.anchor_date, freq, future_number)
             result.append({
-                "id": None,
+                # Bind to the real row if it already exists; otherwise the write
+                # path find-or-creates it by explicit period_number.
+                "id": existing.id if existing is not None else None,
                 "period_number": future_number,
                 "start_date": start_date,
                 "due_date": due_date,
@@ -238,6 +254,7 @@ class PeriodService:
                 "is_debt": False,
                 "is_future": True,
             })
+            collected += 1
 
         return result
 

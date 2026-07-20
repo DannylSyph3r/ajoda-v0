@@ -51,21 +51,50 @@ class PaymentRepository:
         )
         return result.scalar_one_or_none() is not None
 
-    async def mark_paid(self, transaction_id: UUID) -> None:
-        now = datetime.now(timezone.utc)
-        await self.db.execute(
-            update(PendingTransaction)
-            .where(PendingTransaction.id == transaction_id)
-            .values(status="paid", updated_at=now)
-        )
+    async def settle_if_pending(self, reference: str) -> bool:
+        """
+        Atomically transition a transaction pending -> paid.
 
-    async def mark_failed(self, reference: str) -> None:
+        Returns True only if THIS call performed the transition (i.e. the row was
+        still pending). A duplicate webhook/poll observes status already 'paid'
+        and gets False, so the money side-effects (contribution settlement, pool
+        credit) run exactly once. Postgres serialises concurrent UPDATEs on the
+        row and re-evaluates the WHERE against the committed state, so two racing
+        deliveries cannot both win. Money-event idempotency (CLAUDE §2).
+        """
         now = datetime.now(timezone.utc)
-        await self.db.execute(
+        result = await self.db.execute(
             update(PendingTransaction)
-            .where(PendingTransaction.reference == reference)
-            .values(status="failed", updated_at=now)
+            .where(
+                and_(
+                    PendingTransaction.reference == reference,
+                    PendingTransaction.status == "pending",
+                )
+            )
+            .values(status="paid", updated_at=now)
+            .returning(PendingTransaction.id)
         )
+        return result.scalar_one_or_none() is not None
+
+    async def fail_if_pending(self, reference: str) -> bool:
+        """
+        Atomically transition a transaction pending -> failed. Returns True only
+        if the row was still pending, so a failure resolution can never clobber an
+        already-settled (paid) transaction.
+        """
+        now = datetime.now(timezone.utc)
+        result = await self.db.execute(
+            update(PendingTransaction)
+            .where(
+                and_(
+                    PendingTransaction.reference == reference,
+                    PendingTransaction.status == "pending",
+                )
+            )
+            .values(status="failed", updated_at=now)
+            .returning(PendingTransaction.id)
+        )
+        return result.scalar_one_or_none() is not None
 
     async def mark_invalidated(self, reference: str) -> None:
         now = datetime.now(timezone.utc)

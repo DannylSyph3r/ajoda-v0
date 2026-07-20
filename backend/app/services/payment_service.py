@@ -1,16 +1,13 @@
-import hashlib
-import hmac
 import logging
 import secrets
 import time
 from uuid import UUID
 
-import httpx
-
 from app.core.config import get_settings
-from app.core.exceptions import BadRequestException, NotFoundException
+from app.core.exceptions import BadRequestException
 from app.models.pending_transaction import PendingTransaction
 from app.repositories.payment_repository import PaymentRepository
+from app.services.payment_provider import get_payment_provider
 from app.services.period_service import PeriodService
 from app.services.reminder_service import ReminderService
 
@@ -38,24 +35,36 @@ class PaymentService:
         period_data: list[dict],
         amount_kobo: int,
     ) -> PendingTransaction:
-        """Create a pending transaction, generating future periods if needed."""
+        """
+        Create a pending transaction. Existing periods are bound by their id;
+        future periods (id is None) are bound by their explicit `period_number`
+        via an idempotent find-or-create on (coop_id, period_number) — never
+        positionally. So a non-consecutive future selection (e.g. +1 and +3)
+        settles exactly those periods, and two members paying the same future
+        period cannot double-create it.
+        """
         period_ids: list[UUID] = []
+        schedule = None  # loaded once, only if a future period must be materialised
 
-        future_indices = [i for i, p in enumerate(period_data) if p.get("id") is None]
-        future_count = len(future_indices)
+        for p in period_data:
+            pid = p.get("id")
+            if pid is not None:
+                period_ids.append(UUID(str(pid)))
+                continue
 
-        if future_count > 0:
-            generated = await self.period_service.generate_future_periods(
-                coop_id, future_count
+            period_number = p.get("period_number")
+            if period_number is None:
+                raise BadRequestException(
+                    "A selected future period is missing its period number."
+                )
+            if schedule is None:
+                schedule = await self.period_service.schedule_service.get_active_schedule(
+                    coop_id
+                )
+            period = await self.period_service.get_or_create_period_by_number(
+                coop_id, schedule, int(period_number)
             )
-            gen_iter = iter(generated)
-            for p in period_data:
-                if p.get("id") is None:
-                    period_ids.append(next(gen_iter).id)
-                else:
-                    period_ids.append(UUID(str(p["id"])))
-        else:
-            period_ids = [UUID(str(p["id"])) for p in period_data]
+            period_ids.append(period.id)
 
         reference = generate_transaction_reference()
         transaction = await self.payment_repo.create(
@@ -73,20 +82,13 @@ class PaymentService:
         """Build payment initiation URL for WhatsApp CTA button."""
         return f"{settings.prod_url}/api/payments/initiate/{reference}"
 
-    async def poll_transaction_status(
-        self, reference: str, amount_kobo: int
-    ) -> dict:
-        """Query Interswitch for transaction status."""
-        params = {
-            "merchantcode": settings.interswitch_merchant_code,
-            "transactionreference": reference,
-            "amount": amount_kobo,
-        }
-
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(settings.interswitch_query_url, params=params)
-            response.raise_for_status()
-            return response.json()
+    async def poll_transaction_status(self, reference: str) -> dict:
+        """
+        Reconciliation fallback: verify a transaction directly with the PSP via
+        Monnify's server-side Verify Transaction endpoint.
+        Returns the provider's normalized dict: {"status", "amount_kobo", "raw"}.
+        """
+        return await get_payment_provider().verify_transaction(reference)
 
     async def is_transaction_already_processed(self, reference: str) -> bool:
         return await self.payment_repo.is_already_paid(reference)
@@ -94,8 +96,13 @@ class PaymentService:
     async def process_successful_payment(
         self, transaction: PendingTransaction
     ) -> None:
-        """Update transaction and contribution records as paid."""
-        await self.payment_repo.mark_paid(transaction.id)
+        """
+        Apply settlement side-effects for a paid transaction: mark contributions
+        paid, credit the pool, and cancel pending reminders. The pending_transaction
+        row is flipped to 'paid' atomically by PaymentRepository.settle_if_pending()
+        before this runs, so this method only handles the downstream effects and
+        must be called exactly once per settlement.
+        """
         await self.payment_repo.mark_contributions_paid(
             transaction.period_ids, transaction.member_id
         )
@@ -105,22 +112,3 @@ class PaymentService:
         await ReminderService(self.db).cancel_reminders_for_periods(
             transaction.period_ids, transaction.member_id
         )
-
-
-def verify_interswitch_webhook_signature(raw_body: bytes, signature_header: str) -> bool:
-    """
-    Verify X-Interswitch-Signature.
-    Interswitch uses HMAC-SHA512 of the raw JSON body, hex-encoded.
-    Fails closed if INTERSWITCH_WEBHOOK_SECRET is not configured.
-    """
-    if not settings.interswitch_webhook_secret:
-        logger.error(
-            "INTERSWITCH_WEBHOOK_SECRET is not configured — rejecting webhook request"
-        )
-        return False
-    expected = hmac.new(
-        settings.interswitch_webhook_secret.encode(),
-        raw_body,
-        hashlib.sha512,
-    ).hexdigest()
-    return hmac.compare_digest(expected, signature_header)
