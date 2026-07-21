@@ -674,12 +674,14 @@ class WithdrawalService:
             f"📢 *{coop_name}* — pool disbursement",
             "",
             f"₦{amount_naira:,} was disbursed from the pool on {date_str}.",
+            "",
             f"For: {w.reason}",
             f"Authorised by: {authoriser}",
             f"To account: {masked}",
             f"Ref: {w.transfer_reference} (completed)",
         ]
         if w.pool_balance_after is not None:
+            lines.append("")
             lines.append(f"Pool balance now: ₦{w.pool_balance_after // 100:,}")
         text = "\n".join(lines)
 
