@@ -7,6 +7,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Status, type StatusKind } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { Skeleton } from "@/components/ui/Skeleton";
 import {
   authorizeDisbursement,
   getDisbursementBanks,
@@ -27,8 +28,12 @@ interface DisbursementModalProps {
   open: boolean;
   onClose: () => void;
   coopId: string;
-  stepUpToken: string;
+  stepUpToken?: string;
   onSuccess: () => void;
+  /** When set, skip straight to the otp/status step for this existing
+   * withdrawal instead of starting a new disbursement — authorize doesn't
+   * require a fresh step-up PIN, only initiate does. */
+  resumeWithdrawalId?: string;
 }
 
 const TERMINAL = ["COMPLETED", "FAILED"];
@@ -43,6 +48,7 @@ export function DisbursementModal({
   coopId,
   stepUpToken,
   onSuccess,
+  resumeWithdrawalId,
 }: DisbursementModalProps) {
   const [step, setStep] = useState<Step>("form");
   const [amountNaira, setAmountNaira] = useState("");
@@ -81,9 +87,43 @@ export function DisbursementModal({
   };
 
   const handleClose = () => {
+    if (step === "otp" && disbursement) {
+      toast.message("Transfer still pending", {
+        description:
+          "This transfer needs its OTP entered to complete. Resume it anytime from Withdrawals.",
+      });
+    }
     reset();
     onClose();
   };
+
+  // Resume mode: fetch fresh status for an existing withdrawal and jump
+  // straight to otp/status instead of starting a new disbursement. Always
+  // re-fetches rather than trusting list data, since the row may have
+  // resolved since it was last listed.
+  useEffect(() => {
+    if (!open || !resumeWithdrawalId) return;
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        const d = await getDisbursementStatus(coopId, resumeWithdrawalId);
+        if (cancelled) return;
+        setDisbursement(d);
+        setStep(d.status === "PENDING_AUTHORIZATION" ? "otp" : "status");
+      } catch (err) {
+        if (cancelled) return;
+        toast.error(errText(err, "Could not load this transfer."));
+        onClose();
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, resumeWithdrawalId, coopId]);
 
   // Poll for terminal status while PROCESSING (reconciliation-on-read backstop).
   useEffect(() => {
@@ -138,7 +178,10 @@ export function DisbursementModal({
           bank_code: bankCode,
           account_name: verified!.account_name,
         },
-        stepUpToken,
+        // Only reachable via the fresh-creation flow (form → confirm), which
+        // RecordWithdrawalButton always gates behind a real step-up token;
+        // resume mode never reaches this step.
+        stepUpToken!,
       );
       setDisbursement(d);
       setStep(d.status === "PENDING_AUTHORIZATION" ? "otp" : "status");
@@ -170,8 +213,11 @@ export function DisbursementModal({
     }
   };
 
-  const title =
-    step === "confirm"
+  const resuming = !!resumeWithdrawalId && !disbursement;
+
+  const title = resuming
+    ? "Loading transfer…"
+    : step === "confirm"
       ? "Confirm recipient"
       : step === "otp"
         ? "Enter OTP"
@@ -181,7 +227,13 @@ export function DisbursementModal({
 
   return (
     <Modal open={open} onClose={handleClose} title={title}>
-      {step === "form" && (
+      {resuming && (
+        <div className="space-y-3 py-2">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-2/3" />
+        </div>
+      )}
+      {!resuming && step === "form" && (
         <form onSubmit={handleVerify} className="space-y-4">
           <Input
             label="Amount (₦)"

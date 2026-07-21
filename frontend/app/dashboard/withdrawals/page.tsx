@@ -1,12 +1,14 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCoop } from "@/context/CoopContext";
 import { getWithdrawals, getWalletBalance } from "@/lib/api/cooperatives";
 import { formatNaira, formatDateTime } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Status, type StatusKind } from "@/components/ui/Badge";
 import { RecordWithdrawalButton } from "@/components/dashboard/RecordWithdrawalButton";
+import { DisbursementModal } from "@/components/modals/DisbursementModal";
 import type { WithdrawalItem } from "@/lib/api/types";
 
 const STATUS_MAP: Record<string, { kind: StatusKind; label: string }> = {
@@ -26,7 +28,13 @@ function truncateRef(ref: string) {
   return ref.length > 22 ? `${ref.slice(0, 14)}…${ref.slice(-6)}` : ref;
 }
 
-function WithdrawalCard({ withdrawal }: { withdrawal: WithdrawalItem }) {
+function WithdrawalCard({
+  withdrawal,
+  onResume,
+}: {
+  withdrawal: WithdrawalItem;
+  onResume: (id: string) => void;
+}) {
   return (
     <article className="space-y-3 rounded-md border border-border bg-card p-4 shadow-card">
       <div className="flex items-start justify-between gap-3">
@@ -76,6 +84,17 @@ function WithdrawalCard({ withdrawal }: { withdrawal: WithdrawalItem }) {
           </div>
         )}
       </dl>
+      {withdrawal.status === "PENDING_AUTHORIZATION" && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => onResume(withdrawal.id)}
+            className="rounded-sm px-3 py-3.5 text-xs font-medium text-primary transition-colors hover:bg-muted hover:text-primary-dark"
+          >
+            Resume authorization
+          </button>
+        </div>
+      )}
     </article>
   );
 }
@@ -83,6 +102,8 @@ function WithdrawalCard({ withdrawal }: { withdrawal: WithdrawalItem }) {
 export default function WithdrawalsPage() {
   const { activeCoop } = useCoop();
   const coopId = activeCoop?.id ?? "";
+  const queryClient = useQueryClient();
+  const [resumeId, setResumeId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["coop", coopId, "withdrawals"],
@@ -123,7 +144,7 @@ export default function WithdrawalsPage() {
           {walletLoading ? (
             <Skeleton className="mt-1 h-7 w-32" />
           ) : (
-            <p className="tabular text-2xl font-[560] tracking-[-0.02em] text-foreground">
+            <p className="tabular text-2xl font-[560] tracking-[-0.02em] text-primary">
               {wallet ? formatNaira(wallet.available_kobo) : "—"}
             </p>
           )}
@@ -148,7 +169,11 @@ export default function WithdrawalsPage() {
                 </div>
               ))
             : items.map((withdrawal) => (
-                <WithdrawalCard key={withdrawal.id} withdrawal={withdrawal} />
+                <WithdrawalCard
+                  key={withdrawal.id}
+                  withdrawal={withdrawal}
+                  onResume={setResumeId}
+                />
               ))}
           {!isLoading && items.length === 0 && (
             <div className="rounded-md border border-dashed border-border-strong px-4 py-10 text-center">
@@ -208,7 +233,18 @@ export default function WithdrawalsPage() {
                         {w.authorized_by_name}
                       </td>
                       <td className="px-4 py-3">
-                        <WithdrawalStatus status={w.status} />
+                        <div className="flex items-center gap-3">
+                          <WithdrawalStatus status={w.status} />
+                          {w.status === "PENDING_AUTHORIZATION" && (
+                            <button
+                              type="button"
+                              onClick={() => setResumeId(w.id)}
+                              className="relative text-xs font-medium text-primary transition-colors before:absolute before:-inset-2.5 before:content-[''] hover:text-primary-dark"
+                            >
+                              Resume
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         {w.transfer_reference ? (
@@ -241,6 +277,19 @@ export default function WithdrawalsPage() {
           </table>
         </div>
       </div>
+
+      <DisbursementModal
+        open={!!resumeId}
+        onClose={() => setResumeId(null)}
+        coopId={coopId}
+        resumeWithdrawalId={resumeId ?? undefined}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["coop", coopId, "detail"] });
+          queryClient.invalidateQueries({
+            queryKey: ["coop", coopId, "withdrawals"],
+          });
+        }}
+      />
     </div>
   );
 }
