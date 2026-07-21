@@ -29,65 +29,64 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Ajoda \u2014 Payment Received</title>
+    <title>Ajoda &mdash; Payment Received</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;620;700&display=swap" rel="stylesheet">
     <style>
         *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Schibsted Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            background: #f0f4f8;
+            background-color: #F0E6D2;
+            background-image: url('/static/ajodazigzag.png');
+            background-repeat: repeat;
+            background-size: 240px;
             padding: 24px;
+            position: relative;
+        }}
+        body::before {{
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: rgba(240, 230, 210, 0.92);
         }}
         .card {{
+            position: relative;
             background: #ffffff;
-            border-radius: 16px;
+            border: 1px solid #e9ecea;
+            border-radius: 14px;
             padding: 40px 32px;
             max-width: 420px;
             width: 100%;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            box-shadow: 0 4px 24px rgba(20, 40, 30, 0.08);
             text-align: center;
         }}
-        .check-circle {{
-            width: 64px;
-            height: 64px;
-            background: #e8f9f0;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 24px;
-        }}
-        .check-circle svg {{
-            width: 32px;
-            height: 32px;
-        }}
-        .brand {{
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-            color: #25D366;
-            margin-bottom: 12px;
+        .logo-banner {{
+            max-width: 220px;
+            width: 100%;
+            height: auto;
+            margin: 0 auto 28px;
+            display: block;
         }}
         h1 {{
             font-size: 22px;
-            font-weight: 700;
-            color: #111827;
+            font-weight: 620;
+            color: #171a19;
             margin-bottom: 10px;
         }}
         .subtitle {{
             font-size: 15px;
-            color: #6b7280;
+            color: #565e5a;
             line-height: 1.6;
             margin-bottom: 28px;
         }}
         .ref-box {{
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
+            background: #f6f8f7;
+            border: 1px solid #e9ecea;
             border-radius: 8px;
             padding: 12px 16px;
             margin-bottom: 28px;
@@ -98,20 +97,20 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
             font-weight: 600;
             letter-spacing: 0.06em;
             text-transform: uppercase;
-            color: #9ca3af;
+            color: #6a726d;
             margin-bottom: 4px;
         }}
         .ref-value {{
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 500;
-            color: #374151;
+            color: #565e5a;
             font-family: 'Courier New', monospace;
             word-break: break-all;
         }}
         .action-btn {{
             display: block;
             width: 100%;
-            background: #25D366;
+            background: #1E5631;
             color: #ffffff;
             text-decoration: none;
             padding: 14px 24px;
@@ -122,7 +121,7 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
             border: none;
             transition: background 0.15s ease;
         }}
-        .action-btn:hover {{ background: #1ebe5d; }}
+        .action-btn:hover {{ background: #16302A; }}
         .close-msg {{
             display: none;
             margin-top: 16px;
@@ -138,13 +137,7 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
     <div class="card">
-        <div class="check-circle">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#25D366" stroke-width="2.5"
-                 stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
-        </div>
-        <div class="brand">Ajoda</div>
+        <img class="logo-banner" src="/static/ajodalogotextbanner.png" alt="Ajoda">
         <h1>Payment Received</h1>
         <p class="subtitle">
             Your receipt is being prepared.<br>
@@ -174,7 +167,6 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
                 btn.addEventListener('click', function (e) {{
                     e.preventDefault();
                     window.close();
-                    // If window.close() was blocked, surface the fallback message
                     setTimeout(function () {{
                         btn.style.display = 'none';
                         closeMsg.style.display = 'block';
@@ -359,7 +351,7 @@ async def payment_initiate(
             amount_kobo=transaction.amount,
             customer_name=f"{member_name} - {coop_name}",
             customer_email=customer_email,
-            redirect_url=f"{settings.prod_url}/api/payments/redirect?ref={reference}",
+            redirect_url=f"{settings.prod_url}/api/payments/redirect/{reference}",
         )
     except AppException:
         logger.exception("Monnify initialize failed for ref=%s", reference)
@@ -372,10 +364,10 @@ async def payment_initiate(
     return RedirectResponse(url=init["checkout_url"], status_code=302)
 
 
-@router.get("/redirect", include_in_schema=False)
+@router.get("/redirect/{ref}", include_in_schema=False)
 async def payment_redirect(
+    ref: str,
     background_tasks: BackgroundTasks,
-    ref: str = "",
 ) -> HTMLResponse:
     """
     Browser return from Monnify checkout (a GET with result query params). We never

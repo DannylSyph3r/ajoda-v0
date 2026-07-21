@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -39,6 +40,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serves backend/static — images used by the payment completion page
+# (redirect_url flow in routers/payments.py). Path is relative to the process's
+# working directory, which is /app per the Dockerfile's WORKDIR + `COPY . .`,
+# and backend/ when run locally per the documented `uvicorn app.main:app` command.
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.exception_handler(AppException)
