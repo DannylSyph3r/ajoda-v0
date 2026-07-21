@@ -122,6 +122,11 @@ app.include_router(internal.router)
 app.include_router(chatbot.router, prefix="/api")
 
 
+@app.get("/")
+async def root() -> dict:
+    return {"status": "ok"}
+
+
 @app.get("/health")
 async def health() -> JSONResponse:
     """
