@@ -459,7 +459,7 @@ async def get_contributions_summary(
             full_name=row["full_name"],
             total_contributed=row["total_contributed"],
             periods_paid=row["periods_paid"],
-            periods_missed=max(0, row["periods_total"] - row["periods_paid"]),
+            periods_missed=row["periods_missed"],
             last_payment_date=row["last_payment_date"],
             risk_level=(
                 RiskLevel.HIGH if row["late_count"] >= 2

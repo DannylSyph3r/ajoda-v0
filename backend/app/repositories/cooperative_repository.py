@@ -217,7 +217,9 @@ class CooperativeRepository:
         """
         Per-member contribution leaderboard for the exco dashboard.
         Returns: member_id, full_name, total_contributed, periods_paid,
-                 periods_total (member's assigned periods), last_payment_date, late_count.
+                 periods_missed (closed periods left unpaid — the still-open
+                 current period is never counted as missed), last_payment_date,
+                 late_count.
         Sorted by total_contributed DESC.
         """
         stmt = text("""
@@ -233,10 +235,13 @@ class CooperativeRepository:
                 SELECT
                     c.member_id,
                     SUM(CASE WHEN c.status = 'paid' THEN c.amount ELSE 0 END) AS total_contributed,
-                    COUNT(*)                                                    AS periods_total,
+                    COUNT(*) FILTER (
+                        WHERE p.closed_at IS NOT NULL AND c.status != 'paid'
+                    )                                                          AS periods_missed,
                     COUNT(CASE WHEN c.status = 'paid' THEN 1 END)             AS periods_paid,
                     MAX(c.paid_at)                                             AS last_payment_date
                 FROM contributions c
+                JOIN contribution_periods p ON c.period_id = p.id
                 WHERE c.cooperative_id = :coop_id
                 GROUP BY c.member_id
             ),
@@ -256,7 +261,7 @@ class CooperativeRepository:
                 m.id          AS member_id,
                 m.full_name,
                 COALESCE(ms.total_contributed, 0)  AS total_contributed,
-                COALESCE(ms.periods_total, 0)       AS periods_total,
+                COALESCE(ms.periods_missed, 0)       AS periods_missed,
                 COALESCE(ms.periods_paid, 0)        AS periods_paid,
                 ms.last_payment_date,
                 COALESCE(mr.late_count, 0)          AS late_count
