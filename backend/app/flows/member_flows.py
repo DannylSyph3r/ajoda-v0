@@ -1,4 +1,5 @@
 import logging
+import re
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,8 @@ from app.services.whatsapp_service import (
 )
 
 logger = logging.getLogger("akoweai")
+
+_JOIN_CODE_SHAPE = re.compile(r"[A-Z0-9]{8}")
 
 
 def _format_naira(amount_kobo: int) -> str:
@@ -62,6 +65,15 @@ async def handle_register_flow(
             await send_text_message(phone, "Please enter your full name.")
             return
         session.flow_data["name"] = full_name
+
+        # A join code may already be captured if this session was started via
+        # try_start_register_with_code() (a WhatsApp deep link with the code
+        # prefilled) — skip the code-entry step and finish registration now.
+        pre_captured_code = session.flow_data.get("join_code")
+        if pre_captured_code:
+            await _complete_registration(phone, session, db, full_name, pre_captured_code)
+            return
+
         session.current_step = 2
         await send_text_message(
             phone,
@@ -75,39 +87,104 @@ async def handle_register_flow(
             return
 
         full_name = session.flow_data.get("name", "")
+        await _complete_registration(phone, session, db, full_name, join_code)
 
-        try:
-            result = await _register_whatsapp_member(
-                phone=phone,
-                full_name=full_name,
-                join_code=join_code,
-                db=db,
-            )
-        except Exception as exc:
-            error_msg = str(exc)
-            await send_text_message(
-                phone,
-                f"❌ {error_msg}\n\nPlease check your join code and try again:"
-            )
-            return
 
-        session.current_flow = None
-        session.current_step = 0
-        session.flow_data = {}
-        session.active_cooperative_id = result["cooperative_id"]
-
-        due_date = result.get("next_due_date")
-        due_str = f" (due {due_date.strftime('%d %b %Y')})" if due_date else ""
-        amount_str = _format_naira(result["contribution_amount_kobo"])
-
+async def _complete_registration(
+    phone: str,
+    session: ConversationSession,
+    db: AsyncSession,
+    full_name: str,
+    join_code: str,
+) -> None:
+    try:
+        result = await _register_whatsapp_member(
+            phone=phone,
+            full_name=full_name,
+            join_code=join_code,
+            db=db,
+        )
+    except Exception as exc:
+        error_msg = str(exc)
+        # Land back on the code-entry step regardless of how we got here, so a
+        # retry (e.g. a deep-link code that was redeemed by someone else in
+        # the interim) always asks for a fresh code rather than re-trying the
+        # same stale one.
+        session.current_step = 2
+        session.flow_data.pop("join_code", None)
         await send_text_message(
             phone,
-            f"✅ You've joined *{result['cooperative_name']}*!\n\n"
-            f"• Contribution: {amount_str} per period{due_str}\n\n"
-            f"Here's what you can do 👇",
+            f"❌ {error_msg}\n\nPlease check your join code and try again:"
         )
-        from app.flows.dispatch import send_member_main_menu
-        await send_member_main_menu(phone)
+        return
+
+    session.current_flow = None
+    session.current_step = 0
+    session.flow_data = {}
+    session.active_cooperative_id = result["cooperative_id"]
+
+    due_date = result.get("next_due_date")
+    due_str = f" (due {due_date.strftime('%d %b %Y')})" if due_date else ""
+    amount_str = _format_naira(result["contribution_amount_kobo"])
+
+    await send_text_message(
+        phone,
+        f"✅ You've joined *{result['cooperative_name']}*!\n\n"
+        f"• Contribution: {amount_str} per period{due_str}\n\n"
+        f"Here's what you can do 👇",
+    )
+    from app.flows.dispatch import send_member_main_menu
+    await send_member_main_menu(phone)
+
+
+async def try_start_register_with_code(
+    phone: str,
+    session: ConversationSession,
+    text: str,
+    db: AsyncSession,
+) -> bool:
+    """
+    If `text` is shaped like a join code (8-char alnum), validate it and, if
+    valid, jump straight into the register flow with the code already
+    captured — skipping the flow's own code-entry step, since the flow
+    otherwise asks for the member's name first and would swallow a prefilled
+    code as their name. This is what lets a WhatsApp deep link's prefilled
+    join code (dashboard "copy invite link") register successfully as a
+    brand-new number's very first message, bypassing Gemini intent
+    classification entirely (it has no example for a bare code and would
+    likely return UNKNOWN).
+
+    Returns True if this message was handled (valid or invalid code) and the
+    caller should stop; False if the text isn't code-shaped and the caller
+    should fall through to the normal unregistered-user welcome message.
+    """
+    candidate = text.strip().upper()
+    if not _JOIN_CODE_SHAPE.fullmatch(candidate):
+        return False
+
+    from app.repositories.join_code_repository import JoinCodeRepository
+
+    code_repo = JoinCodeRepository(db)
+    jc = await code_repo.get_by_code(candidate)
+    try:
+        JoinCodeService(db)._validate_code(jc)
+    except Exception as exc:
+        await send_text_message(
+            phone,
+            f"❌ {exc}\n\nCheck your invite link, or tap Get Started below.",
+        )
+        await send_reply_buttons(
+            phone,
+            "Ready to join your cooperative?",
+            [{"id": "get_started", "title": "🆕 Get Started"}],
+        )
+        return True
+
+    session.current_flow = "REGISTER"
+    session.current_step = 1
+    session.flow_data = {"join_code": candidate}
+    await send_text_message(phone, "Got your invite! 🎉 What's your full name?")
+    return True
 
 
 async def _register_whatsapp_member(

@@ -119,6 +119,7 @@ async def dispatch_intent(
         handle_pay_intent,
         handle_pay_period_selected,
         handle_register_flow,
+        try_start_register_with_code,
     )
     from app.flows.disbursement_flows import (
         handle_disbursement_flow,
@@ -129,6 +130,11 @@ async def dispatch_intent(
         if intent == Intent.REGISTER or session.current_flow == "REGISTER":
             await handle_register_flow(phone, session, db)
             return
+
+        raw_text = session.flow_data.get("current_text", "")
+        if raw_text and await try_start_register_with_code(phone, session, raw_text, db):
+            return
+
         await send_text_message(
             phone,
             "Welcome to Ajoda! 👋\n\nI manage contributions for savings cooperatives. "
