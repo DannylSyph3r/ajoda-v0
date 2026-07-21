@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search, Copy, Check } from "lucide-react";
+import { Search, Copy, Check, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useCoop } from "@/context/CoopContext";
 import {
   getMembers,
   generateJoinCodes,
+  generateExcoInvite,
   getActiveJoinCodes,
   revokeJoinCode,
 } from "@/lib/api/cooperatives";
@@ -17,7 +18,15 @@ import { Button } from "@/components/ui/Button";
 import { RiskBadge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({
+  text,
+  icon,
+  label = "Copy",
+}: {
+  text: string;
+  icon?: React.ReactNode;
+  label?: string;
+}) {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -30,15 +39,24 @@ function CopyButton({ text }: { text: string }) {
     <button
       type="button"
       onClick={copy}
+      aria-label={copied ? "Copied" : label}
+      title={label}
       className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
     >
       {copied ? (
         <Check className="h-3.5 w-3.5 text-success" />
       ) : (
-        <Copy className="h-3.5 w-3.5" />
+        icon ?? <Copy className="h-3.5 w-3.5" />
       )}
     </button>
   );
+}
+
+/** wa.me deep link with the join code prefilled as the message text, so the
+ * recipient only has to tap send in WhatsApp — no typing or pasting. */
+function buildJoinLink(code: string): string {
+  const waNumber = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "";
+  return `https://wa.me/${waNumber}?text=${encodeURIComponent(code)}`;
 }
 
 function JoinCodeRoleBadge({ role }: { role: string }) {
@@ -131,7 +149,14 @@ function JoinCodeCard({
             {code}
           </code>
         </div>
-        <CopyButton text={code} />
+        <div className="flex shrink-0 items-center gap-0.5">
+          <CopyButton text={code} label="Copy code" />
+          <CopyButton
+            text={buildJoinLink(code)}
+            icon={<MessageCircle className="h-3.5 w-3.5" />}
+            label="Copy WhatsApp invite link"
+          />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -186,6 +211,8 @@ export default function MembersPage() {
   const [count, setCount] = useState("5");
   const [expiry, setExpiry] = useState("30");
   const [generating, setGenerating] = useState(false);
+  const [excoExpiry, setExcoExpiry] = useState("30");
+  const [generatingExco, setGeneratingExco] = useState(false);
   const [revokingCode, setRevokingCode] = useState<string | null>(null);
 
   const filtered = members.filter((member) =>
@@ -208,6 +235,21 @@ export default function MembersPage() {
       toast.error("Failed to generate join codes");
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleGenerateExcoInvite = async () => {
+    setGeneratingExco(true);
+    try {
+      await generateExcoInvite(coopId, parseInt(excoExpiry, 10));
+      await queryClient.invalidateQueries({
+        queryKey: ["coop", coopId, "join-codes"],
+      });
+      toast.success("Exco invite generated");
+    } catch {
+      toast.error("Failed to generate exco invite");
+    } finally {
+      setGeneratingExco(false);
     }
   };
 
@@ -369,6 +411,26 @@ export default function MembersPage() {
           </Button>
         </div>
 
+        <div className="flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:flex-wrap sm:items-end">
+          <Input
+            label="Exco invite expiry (days)"
+            type="number"
+            min="1"
+            max="365"
+            value={excoExpiry}
+            onChange={(e) => setExcoExpiry(e.target.value)}
+            className="w-full sm:w-40"
+          />
+          <Button
+            variant="outline"
+            onClick={handleGenerateExcoInvite}
+            loading={generatingExco}
+            className="w-full sm:w-auto"
+          >
+            Generate Exco Invite
+          </Button>
+        </div>
+
         {codesLoading ? (
           <div className="space-y-2">
             {Array.from({ length: 3 }).map((_, index) => (
@@ -419,7 +481,12 @@ export default function MembersPage() {
                           <code className="font-mono text-sm text-foreground">
                             {joinCode.code}
                           </code>
-                          <CopyButton text={joinCode.code} />
+                          <CopyButton text={joinCode.code} label="Copy code" />
+                          <CopyButton
+                            text={buildJoinLink(joinCode.code)}
+                            icon={<MessageCircle className="h-3.5 w-3.5" />}
+                            label="Copy WhatsApp invite link"
+                          />
                         </div>
                       </td>
                       <td className="px-3 py-2.5">
