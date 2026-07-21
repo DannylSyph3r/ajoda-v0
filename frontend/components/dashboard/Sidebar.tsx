@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -112,16 +113,21 @@ function DashboardNavContent({
     <div className="flex h-full flex-col bg-card">
       <div className="flex items-center justify-between border-b border-border px-4 py-4 sm:px-6 sm:py-5">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
-            <span className="text-white font-bold text-xs">A</span>
-          </div>
+          <Image
+            src="/brand/logo-mark.png"
+            alt=""
+            width={160}
+            height={150}
+            sizes="28px"
+            className="h-7 w-7 object-contain"
+          />
           <span className="font-semibold text-foreground">Ajoda</span>
         </div>
         {showCloseButton && (
           <button
             type="button"
             onClick={onNavigate}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
             aria-label="Close navigation"
           >
             <X className="w-4 h-4" />

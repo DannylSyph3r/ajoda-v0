@@ -89,7 +89,7 @@ export function ChatWidget({ coopId }: ChatWidgetProps) {
                 <button
                   key={q}
                   onClick={() => sendMessage(q)}
-                  className="text-xs bg-muted hover:bg-primary/10 hover:text-primary
+                  className="text-xs bg-muted hover:bg-primary-tint hover:text-primary-ink
                              border border-border rounded-full px-3 py-1.5 transition-colors
                              text-muted-foreground"
                 >
@@ -164,9 +164,10 @@ export function ChatWidget({ coopId }: ChatWidgetProps) {
           <button
             type="submit"
             disabled={!input.trim() || loading}
-            className="h-10 w-10 rounded-lg bg-primary text-white flex items-center justify-center
+            aria-label="Send message"
+            className="h-11 w-11 rounded-sm bg-primary text-white flex items-center justify-center
                        hover:bg-primary-dark transition-colors
-                       disabled:opacity-40 disabled:cursor-not-allowed shrink-0 sm:h-9 sm:w-9"
+                       disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
           >
             <Send className="w-4 h-4" />
           </button>

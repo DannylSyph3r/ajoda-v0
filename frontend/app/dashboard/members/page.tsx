@@ -41,7 +41,7 @@ function CopyButton({
       onClick={copy}
       aria-label={copied ? "Copied" : label}
       title={label}
-      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+      className="relative rounded-md p-1.5 text-muted-foreground transition-colors before:absolute before:-inset-2.5 before:content-[''] hover:bg-card hover:text-foreground"
     >
       {copied ? (
         <Check className="h-3.5 w-3.5 text-success" />
@@ -64,8 +64,8 @@ function JoinCodeRoleBadge({ role }: { role: string }) {
 
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-        isExco ? "bg-primary-tint text-primary-ink" : "bg-muted text-muted-foreground"
+      className={`inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium ${
+        isExco ? "text-foreground" : "text-muted-foreground"
       }`}
     >
       {isExco ? "Exco" : "Member"}
@@ -272,7 +272,7 @@ export default function MembersPage() {
     <div className="space-y-5 sm:space-y-6">
       <h1 className="text-[23px] font-[620] tracking-[-0.015em] text-foreground">Members</h1>
 
-      <div className="overflow-hidden rounded-md border border-border bg-card">
+      <div className="overflow-hidden rounded-md border border-border bg-card shadow-card">
         <div className="border-b border-border p-4">
           <Input
             icon={<Search className="h-4 w-4" />}
@@ -380,7 +380,7 @@ export default function MembersPage() {
         </div>
       </div>
 
-      <div className="space-y-4 rounded-md border border-border bg-card p-4 sm:p-5">
+      <div className="space-y-4 rounded-md border border-border bg-card p-4 shadow-card sm:p-5">
         <h2 className="text-base font-medium text-foreground">Join Codes</h2>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
