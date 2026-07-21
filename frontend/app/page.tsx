@@ -120,38 +120,109 @@ export default function LandingPage() {
               </div>
             </div>
 
-            {/* The proof artifact — the transparency broadcast every member receives */}
-            <div className="mkt-rise mx-auto w-full max-w-sm [--mkt-delay:290ms]">
-              <div className="rounded-lg bg-white/10 p-1.5 shadow-overlay ring-1 ring-white/15">
-                <div className="rounded-[10px] bg-brand-mkt-cream p-4">
-                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-brand-mkt-dark/60">
-                    WhatsApp · to all 24 members
+            {/*
+             * The proof artifact. Rendered as the actual WhatsApp message a
+             * member receives rather than a card labelled "WhatsApp" — the
+             * medium is the argument, so the bubble carries it instead of an
+             * eyebrow, and no explanatory caption is needed underneath.
+             */}
+            <div className="mkt-rise mx-auto w-full max-w-[400px] [--mkt-delay:290ms]">
+              <div className="relative">
+                {/* Incoming-bubble tail */}
+                <span
+                  aria-hidden
+                  className="absolute -left-[9px] top-0 h-[18px] w-[10px] bg-white
+                             [clip-path:polygon(100%_0,0_0,100%_60%)]"
+                />
+
+                <div className="rounded-xl rounded-tl-none bg-white px-4 pb-3 pt-3.5 shadow-overlay">
+                  {/* Sender */}
+                  <div className="flex items-center gap-2.5 border-b border-border pb-3">
+                    <Image
+                      src="/brand/logo-mark.png"
+                      alt=""
+                      width={160}
+                      height={150}
+                      sizes="28px"
+                      aria-hidden
+                      className="h-7 w-7 shrink-0 rounded-full bg-brand-tint object-contain p-1"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-[14px] font-[620] tracking-[-0.01em] text-foreground">
+                      Unity Thrift Coop
+                    </span>
+                    <span className="shrink-0 text-[11.5px] text-tertiary">
+                      21 Jul, 14:32
+                    </span>
+                  </div>
+
+                  {/* The money, given the weight it deserves */}
+                  <p className="mt-3.5 flex items-baseline gap-1">
+                    <span className="text-[20px] font-[450] text-tertiary">₦</span>
+                    {/* No tabular-nums: it gives the comma a full digit
+                        advance, which reads as "250 , 000". Nothing aligns
+                        against this figure, so proportional is correct. */}
+                    <span className="text-[31px] font-[560] leading-none tracking-[-0.03em] text-foreground">
+                      250,000
+                    </span>
                   </p>
-                  <div className="space-y-2 rounded-md rounded-tl-sm bg-white p-3.5 text-[13.5px] leading-relaxed text-foreground shadow-card">
-                    <p className="font-semibold">
-                      📢 Unity Thrift Coop — pool disbursement
-                    </p>
-                    <p>
-                      ₦250,000 was disbursed from the pool on 21 Jul for:{" "}
-                      <span className="font-medium">Generator repair</span>.
-                    </p>
-                    <p className="text-muted-foreground">
-                      Authorised by: Adaeze Okafor
-                      <br />
-                      To account: ••••6789
-                    </p>
-                    <p className="font-mono text-xs text-muted-foreground">
-                      Ref: AJODA-DISB-1784…C1F171{" "}
-                      <span className="font-sans font-medium text-success">
-                        (completed)
-                      </span>
-                    </p>
+                  <p className="mt-1.5 text-[14px] leading-snug text-muted-foreground">
+                    Disbursed from the pool for{" "}
+                    <span className="font-medium text-foreground">
+                      generator repair
+                    </span>
+                    .
+                  </p>
+
+                  {/* Receipt detail */}
+                  <dl className="mt-3.5 space-y-1.5 border-t border-border pt-3 text-[13px]">
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-tertiary">Authorised by</dt>
+                      <dd className="font-medium text-foreground">
+                        Adaeze Okafor
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-tertiary">To account</dt>
+                      <dd className="tabular font-medium text-foreground">
+                        ••••6789
+                      </dd>
+                    </div>
+                  </dl>
+
+                  {/* Reference + state — dot + word, per the status vocabulary */}
+                  <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3">
+                    <span className="min-w-0 truncate font-mono text-[11.5px] text-tertiary">
+                      AJODA-DISB-1784…C1F171
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] font-medium text-success">
+                      <span
+                        aria-hidden
+                        className="h-[7px] w-[7px] rounded-full bg-success"
+                      />
+                      Completed
+                    </span>
+                  </div>
+
+                  {/* Read receipt — the detail that makes it read as real */}
+                  <div className="mt-2.5 flex items-center justify-end gap-1 text-[11px] text-tertiary">
+                    <span>14:32</span>
+                    <svg
+                      viewBox="0 0 18 12"
+                      className="h-3 w-[18px] text-[#53bdeb]"
+                      fill="none"
+                      aria-hidden
+                    >
+                      <path
+                        d="M1 6.5 4.2 9.8 10.6 2.2M7.4 9.8 13.8 2.2"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
                   </div>
                 </div>
               </div>
-              <p className="mt-3 text-center text-[12.5px] text-brand-mkt-cream/70">
-                The message every member receives when pooled money moves.
-              </p>
             </div>
           </div>
 
@@ -260,8 +331,30 @@ export default function LandingPage() {
           />
           <p className="max-w-[62ch] text-[13px] leading-relaxed text-brand-mkt-cream/70">
             {/* One expression: JSX was swallowing the space after the year */}
-            {`© ${new Date().getFullYear()} Ajoda. Built for the cooperative communities that keep Nigeria's informal economy running. Powered by Monnify (sandbox).`}
+            {`© ${new Date().getFullYear()} Ajoda. Built for the cooperative communities that keep Nigeria's informal economy running.`}
           </p>
+
+          {/*
+           * Payments partner mark. The lockup is 4.47:1, so it is sized by
+           * width and never by height — at 116px wide it sits a touch below
+           * the wordmark's optical weight, which is right for a trust mark.
+           * The asset is already single-colour #9CA3AF (5.21:1 here).
+           */}
+          <div className="mt-5 flex flex-col items-center gap-2.5 border-t border-white/10 pt-6">
+            <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-brand-mkt-cream/45">
+              Payments secured by
+            </span>
+            <Image
+              src="/brand/monnify-grey.svg"
+              alt="Monnify"
+              width={831}
+              height={186}
+              className="w-[116px] opacity-80 transition-opacity hover:opacity-100"
+            />
+            <span className="text-[11.5px] text-brand-mkt-cream/40">
+              Sandbox environment
+            </span>
+          </div>
         </div>
       </footer>
     </div>

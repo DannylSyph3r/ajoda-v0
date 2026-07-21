@@ -41,7 +41,7 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            background-color: #F0E6D2;
+            background-color: #F2E7D3;
             background-image: url('/static/ajodazigzag.png');
             background-repeat: repeat;
             background-size: 240px;
@@ -52,7 +52,7 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
             content: '';
             position: absolute;
             inset: 0;
-            background: rgba(240, 230, 210, 0.92);
+            background: rgba(242, 231, 211, 0.92);
         }}
         .card {{
             position: relative;
@@ -65,11 +65,15 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
             box-shadow: 0 4px 24px rgba(20, 40, 30, 0.08);
             text-align: center;
         }}
+        /*
+         * Cropped lockup (496x162). The original ajodalogotextbanner.png is
+         * 1536x1024 with ~85% transparent padding, which opened a crater
+         * between the mark and the heading and shipped 2MB to do it.
+         */
         .logo-banner {{
-            max-width: 220px;
-            width: 100%;
+            width: 132px;
             height: auto;
-            margin: 0 auto 28px;
+            margin: 0 auto 24px;
             display: block;
         }}
         h1 {{
@@ -110,7 +114,7 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
         .action-btn {{
             display: block;
             width: 100%;
-            background: #1E5631;
+            background: #245537;
             color: #ffffff;
             text-decoration: none;
             padding: 14px 24px;
@@ -121,7 +125,8 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
             border: none;
             transition: background 0.15s ease;
         }}
-        .action-btn:hover {{ background: #16302A; }}
+        .action-btn:hover {{ background: #1A352B; }}
+        .action-btn:focus-visible {{ outline: 2px solid #245537; outline-offset: 2px; }}
         .close-msg {{
             display: none;
             margin-top: 16px;
@@ -129,15 +134,33 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
             color: #6b7280;
         }}
         .footer {{
-            margin-top: 24px;
-            font-size: 12px;
+            margin-top: 26px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecea;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }}
+        .footer-label {{
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
             color: #9ca3af;
+        }}
+        /* The lockup is 4.47:1 — size it by width only, never by height. */
+        .monnify-mark {{
+            width: 104px;
+            height: auto;
+            display: block;
+            opacity: 0.9;
         }}
     </style>
 </head>
 <body>
     <div class="card">
-        <img class="logo-banner" src="/static/ajodalogotextbanner.png" alt="Ajoda">
+        <img class="logo-banner" src="/static/ajodalogolockup.png" alt="Ajoda" width="496" height="162">
         <h1>Payment Received</h1>
         <p class="subtitle">
             Your receipt is being prepared.<br>
@@ -149,7 +172,10 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
         <a id="action-btn" class="action-btn" href="#">Loading&hellip;</a>
         <p id="close-msg" class="close-msg">You may now close this tab.</p>
-        <div class="footer">Powered by Ajoda &middot; Secured by Monnify</div>
+        <div class="footer">
+            <span class="footer-label">Payments secured by</span>
+            <img class="monnify-mark" src="/static/monnifylogogrey.svg" alt="Monnify" width="831" height="186">
+        </div>
     </div>
     <script>
         (function () {{
