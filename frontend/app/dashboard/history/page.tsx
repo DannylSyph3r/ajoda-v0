@@ -9,7 +9,7 @@ import {
   getPeriodStatus,
 } from "@/lib/api/cooperatives";
 import { formatNaira, formatDate } from "@/lib/utils";
-import { RiskBadge, Badge } from "@/components/ui/Badge";
+import { RiskBadge, Status } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 function ContributionSummaryCard({
@@ -88,9 +88,9 @@ function PeriodStatusCard({
         <h2 className="min-w-0 truncate text-sm font-semibold text-foreground">
           {row.full_name}
         </h2>
-        <Badge variant={row.status === "paid" ? "success" : "danger"}>
+        <Status kind={row.status === "paid" ? "success" : "danger"}>
           {row.status === "paid" ? "Paid" : "Unpaid"}
-        </Badge>
+        </Status>
       </div>
       <div className="space-y-1 text-sm">
         <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
@@ -152,7 +152,7 @@ export default function HistoryPage() {
         </select>
       </div>
 
-      <div className="bg-card rounded-md border border-border overflow-hidden">
+      <div className="bg-card rounded-md border border-border shadow-card overflow-hidden">
         <div className="space-y-3 p-4 md:hidden">
           {isLoading
             ? Array.from({ length: 4 }).map((_, i) => (
@@ -290,13 +290,13 @@ export default function HistoryPage() {
                           {row.amount > 0 ? formatNaira(row.amount) : "—"}
                         </td>
                         <td className="px-4 py-3">
-                          <Badge
-                            variant={
+                          <Status
+                            kind={
                               row.status === "paid" ? "success" : "danger"
                             }
                           >
                             {row.status === "paid" ? "Paid" : "Unpaid"}
-                          </Badge>
+                          </Status>
                         </td>
                       </tr>
                     ))}

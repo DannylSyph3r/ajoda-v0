@@ -54,7 +54,7 @@ export default function BroadcastPage() {
     <div className="max-w-3xl space-y-5 sm:space-y-6">
       <h1 className="text-[23px] font-[620] tracking-[-0.015em] text-foreground">Broadcast</h1>
 
-      <div className="space-y-4 rounded-md border border-border bg-card p-4 sm:p-6">
+      <div className="space-y-4 rounded-md border border-border bg-card p-4 shadow-card sm:p-5">
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-foreground">Message</label>
           <textarea

@@ -30,7 +30,7 @@ function MetricCard({
         <p
           className={
             hero
-              ? "tabular text-[28px] font-[560] tracking-[-0.03em] text-foreground sm:text-[31px]"
+              ? "tabular text-[28px] font-[560] tracking-[-0.03em] text-primary sm:text-[31px]"
               : "tabular text-xl font-[560] tracking-[-0.02em] text-foreground sm:text-2xl"
           }
         >
@@ -77,31 +77,33 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="space-y-4">
         <MetricCard
           title="Pool Balance"
           value={coop ? formatNaira(coop.pool_balance) : "—"}
           loading={loading}
           hero
         />
-        <MetricCard
-          title="Total Members"
-          value={coop ? String(coop.member_count) : "—"}
-          loading={loading}
-        />
-        <MetricCard
-          title="Collection Rate"
-          value={coop ? `${coop.collection_rate_pct}%` : "—"}
-          loading={loading}
-        />
-        <MetricCard
-          title="YTD Collected"
-          value={coop ? formatNaira(coop.ytd_collected_kobo) : "—"}
-          loading={loading}
-        />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <MetricCard
+            title="Total Members"
+            value={coop ? String(coop.member_count) : "—"}
+            loading={loading}
+          />
+          <MetricCard
+            title="Collection Rate"
+            value={coop ? `${coop.collection_rate_pct}%` : "—"}
+            loading={loading}
+          />
+          <MetricCard
+            title="YTD Collected"
+            value={coop ? formatNaira(coop.ytd_collected_kobo) : "—"}
+            loading={loading}
+          />
+        </div>
       </div>
 
-      <div className="rounded-md border border-border bg-card p-4 shadow-card sm:p-5">
+      <div className="rounded-md bg-muted p-4 sm:p-5">
         <div className="flex items-start gap-3">
           <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-secondary" />
           <div className="flex-1 min-w-0">

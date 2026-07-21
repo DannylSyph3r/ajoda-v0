@@ -24,7 +24,7 @@ export default function ChatPage() {
           Ask anything about your cooperative&apos;s finances
         </p>
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-card">
+      <div className="min-h-0 flex-1 overflow-hidden rounded-md border border-border bg-card shadow-card">
         {/*
           Key on activeCoop.id ensures full remount on coop switch.
           This clears message history and prevents context bleed between cooperatives.
