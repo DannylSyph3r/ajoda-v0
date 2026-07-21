@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Phone, Lock } from "lucide-react";
 import { toast } from "sonner";
-import { motion } from "framer-motion";
 import { login } from "@/lib/api/auth";
+import type { ApiError } from "@/lib/api/client";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 
@@ -22,73 +22,62 @@ export default function LoginPage() {
     try {
       await login(phone, pin);
       router.push("/dashboard");
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? "Invalid credentials");
+    } catch (err) {
+      const apiError = err as ApiError;
+      toast.error(apiError.response?.data?.message ?? "Invalid credentials");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted px-4">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2 }}
-        className="w-full max-w-sm"
-      >
-        <div className="mb-8 text-center">
-          <div className="inline-flex items-center justify-center w-10 h-10 rounded-md bg-primary mb-3">
-            <span className="text-white font-bold">A</span>
-          </div>
-          <h1 className="text-[23px] font-[620] tracking-[-0.015em] text-foreground">
-            Welcome back
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Sign in to your exco dashboard
-          </p>
-        </div>
+    <>
+      <h1 className="text-[27px] font-[620] tracking-[-0.02em] text-foreground">
+        Welcome back
+      </h1>
+      <p className="mt-1.5 text-[15px] text-muted-foreground">
+        Sign in to your exco dashboard.
+      </p>
 
-        <div className="bg-card rounded-md border border-border shadow-sm p-6 space-y-4">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Input
-              label="Phone Number"
-              type="tel"
-              icon={<Phone className="w-4 h-4" />}
-              placeholder="08012345678"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              required
-              autoComplete="tel"
-            />
-            <Input
-              label="PIN"
-              type="password"
-              inputMode="numeric"
-              maxLength={6}
-              icon={<Lock className="w-4 h-4" />}
-              placeholder="Enter your PIN"
-              value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-              required
-              autoComplete="current-password"
-            />
-            <Button type="submit" loading={loading} className="w-full">
-              Sign In
-            </Button>
-          </form>
+      <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+        <Input
+          className="min-h-11"
+          label="Phone number"
+          type="tel"
+          icon={<Phone className="w-4 h-4" />}
+          placeholder="08012345678"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          required
+          autoComplete="tel"
+        />
+        <Input
+          className="min-h-11"
+          label="PIN"
+          type="password"
+          inputMode="numeric"
+          maxLength={6}
+          icon={<Lock className="w-4 h-4" />}
+          placeholder="Enter your PIN"
+          value={pin}
+          onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+          required
+          autoComplete="current-password"
+        />
+        <Button type="submit" loading={loading} size="lg" className="w-full">
+          {loading ? "Signing in…" : "Sign in"}
+        </Button>
+      </form>
 
-          <p className="text-center text-sm text-muted-foreground">
-            Not registered?{" "}
-            <Link
-              href="/register"
-              className="text-primary font-medium hover:underline"
-            >
-              Create account
-            </Link>
-          </p>
-        </div>
-      </motion.div>
-    </div>
+      <p className="mt-7 text-sm text-muted-foreground">
+        Not registered?{" "}
+        <Link
+          href="/register"
+          className="inline-flex min-h-11 items-center rounded-sm font-medium text-brand-mkt hover:underline"
+        >
+          Create an account
+        </Link>
+      </p>
+    </>
   );
 }

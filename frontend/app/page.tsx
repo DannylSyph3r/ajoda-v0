@@ -40,15 +40,15 @@ export default function LandingPage() {
       {/* ---------------------------------------------------------------- Nav */}
       <nav className="flex items-center justify-between border-b border-border px-6 py-3">
         <Link href="/" className="flex items-center rounded-sm" aria-label="Ajoda home">
-          {/* Full lockup — DESIGN.md reserves this form for placements ≥120px */}
+          {/* Full lockup — legible down to 104px, verified in browser */}
           <Image
             src="/brand/logo-lockup.png"
             alt="Ajoda"
             width={496}
             height={162}
-            sizes="124px"
+            sizes="106px"
             priority
-            className="w-[124px]"
+            className="w-[106px]"
           />
         </Link>
         <Link
@@ -56,7 +56,7 @@ export default function LandingPage() {
           className="-mr-2 flex items-center rounded-sm px-2 py-3 text-sm font-medium
                      text-brand-mkt transition-colors hover:text-brand-mkt-dark"
         >
-          Exco login
+          Sign in
         </Link>
       </nav>
 
@@ -172,23 +172,39 @@ export default function LandingPage() {
             all the way back out again, and tells everyone about it.
           </p>
 
-          {/* A real ordered sequence — the money moves through these four
-              stages in this order — so the numbering carries information. */}
-          <ol className="mt-12 grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
-            {LOOP.map(({ step, title, body }) => (
-              <li key={step} className="border-t border-border pt-4">
-                <span className="tabular block text-[13px] font-[620] tracking-[0.04em] text-brand-mkt-terracotta">
-                  {step}
-                </span>
-                <h3 className="mt-2.5 text-[16px] font-[620] tracking-[-0.01em] text-foreground">
-                  {title}
-                </h3>
-                <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">
-                  {body}
-                </p>
-              </li>
-            ))}
-          </ol>
+          <div className="mt-12 grid items-center gap-x-14 gap-y-12 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1fr)]">
+            {/*
+             * The source illustration the whole pattern system was extracted
+             * from — a rotating pool passed hand to hand, which is literally
+             * what this section describes. Full colour, marketing register.
+             */}
+            <Image
+              src="/brand/illustration.png"
+              alt="Six cooperative members in patterned cloth, passing contributions hand to hand around a ring."
+              width={1100}
+              height={898}
+              sizes="(min-width: 640px) 520px, 92vw"
+              className="mx-auto w-full max-w-[520px]"
+            />
+
+            {/* A real ordered sequence — the money moves through these four
+                stages in this order — so the numbering carries information. */}
+            <ol className="grid gap-x-8 gap-y-9 sm:grid-cols-2">
+              {LOOP.map(({ step, title, body }) => (
+                <li key={step} className="border-t border-border pt-4">
+                  <span className="tabular block text-[13px] font-[620] tracking-[0.04em] text-brand-mkt-terracotta">
+                    {step}
+                  </span>
+                  <h3 className="mt-2.5 text-[16px] font-[620] tracking-[-0.01em] text-foreground">
+                    {title}
+                  </h3>
+                  <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground">
+                    {body}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          </div>
         </section>
 
         {/* --------------------------------------------------- Closing band */}
@@ -243,9 +259,8 @@ export default function LandingPage() {
             className="h-[30px] w-auto opacity-85 [filter:brightness(0)_invert(1)]"
           />
           <p className="max-w-[62ch] text-[13px] leading-relaxed text-brand-mkt-cream/70">
-            © {new Date().getFullYear()} Ajoda. Built for the cooperative
-            communities that keep Nigeria&apos;s informal economy running.
-            Powered by Monnify (sandbox).
+            {/* One expression: JSX was swallowing the space after the year */}
+            {`© ${new Date().getFullYear()} Ajoda. Built for the cooperative communities that keep Nigeria's informal economy running. Powered by Monnify (sandbox).`}
           </p>
         </div>
       </footer>

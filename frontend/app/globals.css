@@ -150,6 +150,17 @@ textarea:focus-visible {
   background-repeat: repeat;
 }
 
+/*
+ * Tile seamlessness, measured off the source artwork (mean channel delta
+ * across the wrap edge vs. a typical adjacent row/column inside the tile):
+ *
+ *   zigzag   vertical  3.1 vs 4.5  seamless   horizontal 24.0 vs 4.7  seam
+ *   chevron  vertical 68.9 vs 2.7  SEAM       horizontal  3.0 vs 2.7  seamless
+ *
+ * So each pattern may only be repeated along the axis it actually tiles on.
+ * The zigzag is safe to repeat vertically; the chevron is safe to repeat
+ * horizontally and must never stack, or a hard line appears across the weave.
+ */
 .mkt-pattern--zigzag {
   background-image: url("/brand/zigzag-tile.png");
   background-size: 380px;
@@ -157,7 +168,16 @@ textarea:focus-visible {
 
 .mkt-pattern--chevron {
   background-image: url("/brand/chevron-tile.png");
-  background-size: 300px;
+  background-repeat: repeat-x;
+  background-size: auto 100%;
+}
+
+/* Tall decorative panel (auth): one uncropped-height pass, no repeat at all */
+.mkt-panel--chevron {
+  background-image: url("/brand/chevron-tile.png");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
 }
 
 /*
