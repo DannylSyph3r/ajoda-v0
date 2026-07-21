@@ -45,6 +45,15 @@ class Settings(BaseSettings):
     internal_cron_secret: str
     frontend_url: str = ""
     prod_url: str = ""
+    # Extra CORS origins beyond frontend_url, comma-separated (e.g. a local dev
+    # frontend hitting this deployment directly). Never a wildcard — additive only.
+    cors_extra_origins: str = ""
+
+    @property
+    def cors_allowed_origins(self) -> list[str]:
+        origins = [self.frontend_url] if self.frontend_url else []
+        origins += [o.strip() for o in self.cors_extra_origins.split(",") if o.strip()]
+        return origins or ["*"]
 
     @property
     def async_database_url(self) -> str:
