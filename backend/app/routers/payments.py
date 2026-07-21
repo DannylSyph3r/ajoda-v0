@@ -186,7 +186,7 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
             var closeMsg = document.getElementById('close-msg');
 
             if (isMobile) {{
-                btn.href = 'https://wa.me/';
+                btn.href = '{wa_link}';
                 btn.textContent = '\u2190 Back to WhatsApp';
             }} else {{
                 btn.textContent = 'Close this tab';
@@ -406,7 +406,10 @@ async def payment_redirect(
         background_tasks.add_task(_verify_and_process_payment, txnref)
 
     return HTMLResponse(
-        content=_COMPLETION_HTML_TEMPLATE.format(txnref=txnref or "\u2014")
+        content=_COMPLETION_HTML_TEMPLATE.format(
+            txnref=txnref or "\u2014",
+            wa_link=f"https://wa.me/{settings.whatsapp_contact_number}",
+        )
     )
 
 

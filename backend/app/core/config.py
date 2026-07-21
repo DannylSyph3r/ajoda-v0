@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     meta_access_token: str
     meta_verify_token: str
     meta_app_secret: str  # X-Hub-Signature-256 webhook verification
+    whatsapp_contact_number: str = ""  # dialable wa.me number (digits, no + or spaces) for CTA links
 
     # Monnify (PSP — collections + disbursement). Sandbox base by default; flip to
     # https://api.monnify.com for live via env. No separate webhook-signing secret —
