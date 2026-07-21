@@ -26,15 +26,18 @@ def verify_pin(plain: str, hashed: str) -> bool:
     return bcrypt.verify(plain, hashed)
 
 
+_DUMMY_PIN_HASH = bcrypt.using(rounds=12).hash("correct horse battery staple")
+
+
 def verify_pin_constant_time(plain: str, hashed: str | None) -> bool:
-    
     """
     Always runs a bcrypt operation regardless of whether a hash exists.
     Prevents timing-based phone number enumeration on login.
-    When hashed is None (member not found or no PIN set), dummy_verify()
+    When hashed is None (member not found or no PIN set), verify against
+    a precomputed dummy hash so both branches cost one bcrypt op.
     """
     if hashed is None:
-        bcrypt.using(rounds=12).dummy_verify()
+        bcrypt.verify(plain, _DUMMY_PIN_HASH)
         return False
     return bcrypt.verify(plain, hashed)
 
