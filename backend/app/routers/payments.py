@@ -189,15 +189,11 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
                 btn.href = '{wa_link}';
                 btn.textContent = '\u2190 Back to WhatsApp';
             }} else {{
-                btn.textContent = 'Close this tab';
-                btn.addEventListener('click', function (e) {{
-                    e.preventDefault();
-                    window.close();
-                    setTimeout(function () {{
-                        btn.style.display = 'none';
-                        closeMsg.style.display = 'block';
-                    }}, 300);
-                }});
+                // Browsers block window.close() on tabs they didn't open via
+                // script, so a "Close this tab" button here would almost always
+                // silently fail. Skip straight to the plain-text fallback.
+                btn.style.display = 'none';
+                closeMsg.style.display = 'block';
             }}
         }})();
     </script>

@@ -213,6 +213,12 @@ class PeriodService:
                 })
 
         # --- Up to 3 unpaid future periods, anchored on the current-period cursor ---
+        # Locked out while any debt or unpaid-current period is outstanding — a
+        # member must be caught up before pre-paying ahead, so arrears can't be
+        # masked by a paid future period while an earlier one sits unpaid.
+        if result:
+            return result
+
         # Anchor on the current period (scheduler-advanced), NOT MAX(period_number):
         # one member materialising future rows by paying ahead must not shift any
         # other member's projected window. Periods the member has already paid

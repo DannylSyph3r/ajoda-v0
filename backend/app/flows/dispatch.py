@@ -397,6 +397,12 @@ async def dispatch_intent(
             else:
                 await send_member_main_menu(phone, multi_coop=False)
 
+    elif intent == Intent.EXPIRED_SELECTION:
+        await send_text_message(
+            phone,
+            "That selection has expired. Reply *pay* to start a new payment.",
+        )
+
     else:
         from app.services.intent_service import send_fallback_menu
         await send_fallback_menu(phone, coop_member_role)

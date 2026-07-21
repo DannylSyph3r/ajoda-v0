@@ -103,6 +103,13 @@ async def route_message(
         ):
             return Intent.PAY, {"row_id": row_id}
 
+        # A period_/future_ row id outside an active PAY_SELECTION flow means the
+        # member tapped a stale list message (already completed or expired) —
+        # give a specific reply instead of falling through to classify_button_intent,
+        # which would return UNKNOWN and send the generic fallback.
+        if row_id.startswith("period_") or row_id.startswith("future_"):
+            return Intent.EXPIRED_SELECTION, {}
+
         # Flow-aware list routing — member lookup result selection
         if (
             session.current_flow == ConversationFlow.MEMBER_LOOKUP.value
