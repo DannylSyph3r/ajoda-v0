@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Lock } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -58,22 +57,22 @@ export function StepUpModal({
 
   return (
     <Modal open={open} onClose={handleClose} title="Confirm your PIN">
-      <div className="space-y-4">
+      <div className="space-y-5">
         <p className="text-sm text-muted-foreground">
-          Enter your PIN to authorize:{" "}
+          Enter your PIN to authorize{" "}
           <span className="font-medium text-foreground">
             {ACTION_LABELS[action]}
           </span>
+          .
         </p>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <Input
             label="PIN"
             type="password"
             inputMode="numeric"
             maxLength={6}
-            icon={<Lock className="w-4 h-4" />}
-            placeholder="Enter your PIN"
-            className="font-mono tracking-[0.2em]"
+            placeholder="••••"
+            className="text-center font-mono text-lg tracking-[0.35em] placeholder:text-muted-foreground"
             value={pin}
             onChange={(e) => {
               setPin(e.target.value.replace(/\D/g, ""));

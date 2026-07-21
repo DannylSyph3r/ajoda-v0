@@ -20,6 +20,14 @@ class ScheduleRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_ids(self, schedule_ids: list[UUID]) -> list[CoopSchedule]:
+        if not schedule_ids:
+            return []
+        result = await self.db.execute(
+            select(CoopSchedule).where(CoopSchedule.id.in_(schedule_ids))
+        )
+        return list(result.scalars().all())
+
     async def supersede(self, schedule_id: UUID) -> None:
         await self.db.execute(
             update(CoopSchedule)

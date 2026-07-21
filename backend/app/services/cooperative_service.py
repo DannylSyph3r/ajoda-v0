@@ -4,9 +4,10 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import Frequency, Role
-from app.core.exceptions import NotFoundException
+from app.core.exceptions import ConflictException, NotFoundException
 from app.repositories.cooperative_repository import CooperativeRepository
 from app.repositories.schedule_repository import ScheduleRepository
+from app.services.period_service import PeriodService
 from app.services.schedule_service import ScheduleService
 import logging; logger = logging.getLogger("akoweai")
 
@@ -118,6 +119,19 @@ class CooperativeService:
         # A new schedule version is only warranted when the schedule itself changes
         if frequency is not None or due_day_offset is not None:
             current_schedule = await self.schedule_service.get_active_schedule(coop_id)
+
+            # A frequency change reshuffles period boundaries for every period
+            # number going forward (see compute_period_start). If a member has
+            # already paid ahead into a future period under the current cadence,
+            # switching frequency can make that period's dates fall out of
+            # chronological order with newly-created ones. Block only when the
+            # frequency is actually changing, not on a due_day_offset-only edit.
+            if frequency is not None and frequency.value != current_schedule.frequency:
+                if await PeriodService(self.db).has_future_paid_contribution(coop_id):
+                    raise ConflictException(
+                        "Cannot change frequency — a member has already paid "
+                        "for a future period under the current schedule."
+                    )
 
             effective_frequency = frequency or Frequency(current_schedule.frequency)
             effective_offset = (

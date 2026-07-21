@@ -44,6 +44,26 @@ class PeriodRepository:
         )
         return result.scalar_one_or_none()
 
+    async def has_paid_future_period(
+        self, coop_id: UUID, current_period_number: int
+    ) -> bool:
+        """
+        Whether any member has a paid contribution for a period beyond the coop's
+        current cursor. Bounded from this coop's own (small) period set outward to
+        the platform-wide contributions table, not an unbounded scan of it.
+        """
+        result = await self.db.execute(
+            select(Contribution.id)
+            .join(ContributionPeriod, Contribution.period_id == ContributionPeriod.id)
+            .where(
+                ContributionPeriod.cooperative_id == coop_id,
+                ContributionPeriod.period_number > current_period_number,
+                Contribution.status == "paid",
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
     async def get_latest_period_number(self, coop_id: UUID) -> int:
         result = await self.db.execute(
             select(ContributionPeriod.period_number)

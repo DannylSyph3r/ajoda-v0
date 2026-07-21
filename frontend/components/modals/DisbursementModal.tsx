@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Check, Info, Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Status, type StatusKind } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
@@ -56,6 +57,9 @@ export function DisbursementModal({
   const [accountNumber, setAccountNumber] = useState("");
   const [bankCode, setBankCode] = useState("");
   const [verified, setVerified] = useState<VerifyRecipientResponse | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const lastAttemptRef = useRef<string | null>(null);
   const [disbursement, setDisbursement] = useState<DisbursementResponse | null>(
     null,
   );
@@ -81,6 +85,9 @@ export function DisbursementModal({
     setAccountNumber("");
     setBankCode("");
     setVerified(null);
+    setVerifying(false);
+    setVerifyError(null);
+    lastAttemptRef.current = null;
     setDisbursement(null);
     setOtp("");
     setLoading(false);
@@ -146,24 +153,51 @@ export function DisbursementModal({
     return () => clearInterval(timer);
   }, [step, disbursement, coopId, onSuccess]);
 
-  const handleVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const amount = parseFloat(amountNaira);
-    if (!amount || amount <= 0 || reason.trim().length < 3) return;
-    if (!/^\d{10}$/.test(accountNumber) || !bankCode) {
-      toast.error("Enter a 10-digit account number and select a bank.");
+  // Auto-verify the recipient the instant a 10-digit account number is paired
+  // with a selected bank. Fires immediately the first time; if the user
+  // edits the number after that (a correction), debounce ~1s so we don't
+  // fire a lookup per keystroke.
+  useEffect(() => {
+    if (accountNumber.length !== 10 || !bankCode) {
+      setVerified(null);
+      setVerifyError(null);
+      lastAttemptRef.current = null;
       return;
     }
-    setLoading(true);
-    try {
-      const v = await verifyRecipient(coopId, accountNumber, bankCode);
-      setVerified(v);
-      setStep("confirm");
-    } catch (err) {
-      toast.error(errText(err, "Could not verify that account."));
-    } finally {
-      setLoading(false);
-    }
+    const key = `${bankCode}:${accountNumber}`;
+    if (key === lastAttemptRef.current) return;
+
+    const delay = lastAttemptRef.current === null ? 0 : 1000;
+    const timer = setTimeout(async () => {
+      lastAttemptRef.current = key;
+      setVerified(null);
+      setVerifyError(null);
+      setVerifying(true);
+      try {
+        const v = await verifyRecipient(coopId, accountNumber, bankCode);
+        setVerified(v);
+      } catch (err) {
+        setVerifyError(
+          errText(err, "Could not verify this account — check the number and bank."),
+        );
+      } finally {
+        setVerifying(false);
+      }
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [accountNumber, bankCode, coopId]);
+
+  const canContinue =
+    !!parseFloat(amountNaira) &&
+    parseFloat(amountNaira) > 0 &&
+    reason.trim().length >= 3 &&
+    !!verified &&
+    !verifying;
+
+  const handleContinue = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canContinue) return;
+    setStep("confirm");
   };
 
   const handleInitiate = async () => {
@@ -234,13 +268,14 @@ export function DisbursementModal({
         </div>
       )}
       {!resuming && step === "form" && (
-        <form onSubmit={handleVerify} className="space-y-4">
+        <form onSubmit={handleContinue} className="space-y-4">
           <Input
             label="Amount (₦)"
             type="number"
             min="1"
             step="1"
             placeholder="e.g. 50000"
+            className="tabular text-lg font-medium placeholder:[font-variant-numeric:normal]"
             value={amountNaira}
             onChange={(e) => setAmountNaira(e.target.value)}
             required
@@ -259,24 +294,20 @@ export function DisbursementModal({
               required
             />
           </div>
-          <Input
-            label="Destination account number"
-            inputMode="numeric"
-            maxLength={10}
-            placeholder="10-digit NUBAN"
-            value={accountNumber}
-            onChange={(e) =>
-              setAccountNumber(e.target.value.replace(/\D/g, "").slice(0, 10))
-            }
-            required
-          />
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-foreground">Bank</label>
             <select
               className="w-full rounded-sm border border-border-strong bg-card px-3 py-2 text-sm
                          text-foreground transition-colors focus:border-primary"
               value={bankCode}
-              onChange={(e) => setBankCode(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setBankCode(next);
+                // Only wipe a typed account number if the bank was cleared
+                // back to "unselected" — switching bank-to-bank should
+                // re-verify the existing digits, not force a retype.
+                if (!next) setAccountNumber("");
+              }}
               required
             >
               <option value="">Select a bank…</option>
@@ -287,19 +318,64 @@ export function DisbursementModal({
               ))}
             </select>
           </div>
+          <div>
+            <Input
+              label="Destination account number"
+              inputMode="numeric"
+              maxLength={10}
+              placeholder={bankCode ? "10-digit NUBAN" : "Select a bank first"}
+              disabled={!bankCode}
+              value={accountNumber}
+              onChange={(e) =>
+                setAccountNumber(e.target.value.replace(/\D/g, "").slice(0, 10))
+              }
+              required
+            />
+            {accountNumber.length === 10 && bankCode && (
+              <div className="mt-1.5 flex items-center gap-1.5 text-[12.5px]">
+                {verifying && (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+                    <span className="text-muted-foreground">
+                      Verifying account…
+                    </span>
+                  </>
+                )}
+                {!verifying && verified && (
+                  <>
+                    <Check className="h-3.5 w-3.5 shrink-0 text-success" />
+                    <span className="text-foreground">
+                      {verified.account_name}
+                    </span>
+                  </>
+                )}
+                {!verifying && verifyError && (
+                  <span className="text-destructive">{verifyError}</span>
+                )}
+              </div>
+            )}
+          </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button variant="ghost" type="button" onClick={handleClose}>
               Cancel
             </Button>
-            <Button type="submit" loading={loading}>
-              Verify recipient
+            <Button type="submit" disabled={!canContinue}>
+              Continue
             </Button>
           </div>
         </form>
       )}
 
       {step === "confirm" && verified && (
-        <div className="space-y-4">
+        <div className="space-y-5">
+          <div className="space-y-1 text-center">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
+              You&apos;re sending
+            </p>
+            <p className="tabular text-[28px] font-[560] tracking-[-0.03em] text-primary">
+              {formatNaira(Math.round(parseFloat(amountNaira) * 100))}
+            </p>
+          </div>
           <div className="flex items-center gap-3 rounded-sm border border-border-strong bg-muted p-3.5">
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary-tint text-primary-ink">
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
@@ -309,20 +385,18 @@ export function DisbursementModal({
                 {verified.account_name}
               </p>
               <p className="text-[12.5px] text-muted-foreground">
-                {bankName} · {verified.account_masked} — verified by Monnify
+                {bankName} · {verified.account_masked}
               </p>
             </div>
           </div>
-          <dl className="space-y-2 text-sm">
-            <Row
-              label="Amount"
-              value={formatNaira(Math.round(parseFloat(amountNaira) * 100))}
-            />
-            <Row label="Reason" value={reason} />
-          </dl>
-          <p className="text-xs text-muted-foreground">
-            An OTP will be emailed to the account owner to authorize the transfer.
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">Reason </span>
+            {reason}
           </p>
+          <div className="flex items-start gap-2 rounded-sm border border-border bg-muted px-3.5 py-3 text-xs text-muted-foreground">
+            <Info className="h-4 w-4 shrink-0 mt-0.5" />
+            An OTP will be emailed to the account owner to authorize the transfer.
+          </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button
               variant="ghost"
@@ -363,10 +437,38 @@ export function DisbursementModal({
       )}
 
       {step === "status" && disbursement && (
-        <div className="space-y-4 text-sm">
-          <TransferProgress status={disbursement.status} />
+        <div className="space-y-5 text-sm">
+          {TERMINAL.includes(disbursement.status) ? (
+            <div className="space-y-1 pb-1 text-center">
+              <span
+                className={`mx-auto grid h-12 w-12 place-items-center rounded-full ${
+                  disbursement.status === "COMPLETED"
+                    ? "bg-primary-tint text-primary-ink"
+                    : "bg-destructive/10 text-destructive"
+                }`}
+              >
+                {disbursement.status === "COMPLETED" ? (
+                  <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                )}
+              </span>
+              <p className="pt-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
+                {disbursement.status === "COMPLETED"
+                  ? "Transfer completed"
+                  : "Transfer failed"}
+              </p>
+              <p className="tabular text-[28px] font-[560] tracking-[-0.03em] text-primary">
+                {formatNaira(disbursement.amount)}
+              </p>
+            </div>
+          ) : (
+            <TransferProgress status={disbursement.status} />
+          )}
           <dl className="space-y-2">
-            <Row label="Amount" value={formatNaira(disbursement.amount)} />
+            {!TERMINAL.includes(disbursement.status) && (
+              <Row label="Amount" value={formatNaira(disbursement.amount)} />
+            )}
             <Row
               label="Recipient"
               value={`${disbursement.destination_account_name ?? "—"} (${
@@ -386,8 +488,12 @@ export function DisbursementModal({
             </p>
           )}
           <div className="flex justify-end">
-            <Button type="button" variant="ghost" onClick={handleClose}>
-              Close
+            <Button
+              type="button"
+              variant={disbursement.status === "COMPLETED" ? "primary" : "ghost"}
+              onClick={handleClose}
+            >
+              {disbursement.status === "COMPLETED" ? "Done" : "Close"}
             </Button>
           </div>
         </div>
@@ -435,36 +541,41 @@ function TransferProgress({ status }: { status: string }) {
     kind: "neutral" as StatusKind,
     label: status,
   };
-  if (status === "FAILED") {
-    return <Status kind="danger">Failed</Status>;
-  }
   const currentIx = PROGRESS_STEPS.findIndex((st) => st.key === status);
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-3">
       <Status kind={meta.kind}>{meta.label}</Status>
-      <ol className="space-y-0.5">
+      <ol>
         {PROGRESS_STEPS.map((st, ix) => {
-          const done = currentIx > ix || status === "COMPLETED";
-          const now = st.key === status && status !== "COMPLETED";
+          const done = currentIx > ix;
+          const now = st.key === status;
+          const isLast = ix === PROGRESS_STEPS.length - 1;
           return (
-            <li key={st.key} className="flex items-center gap-2.5 py-1">
-              <span
-                className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[11px] font-semibold ${
-                  done
-                    ? "border-primary bg-primary text-white"
-                    : now
-                      ? "border-primary bg-card text-primary"
-                      : "border-border-strong bg-card text-tertiary"
-                }`}
-              >
-                {done ? (
-                  <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
-                ) : (
-                  ix + 1
+            <li key={st.key} className="flex gap-2.5">
+              <div className="flex flex-col items-center">
+                <span
+                  className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border text-[11px] font-semibold ${
+                    done
+                      ? "border-primary bg-primary text-white"
+                      : now
+                        ? "border-primary bg-card text-primary"
+                        : "border-border-strong bg-card text-tertiary"
+                  }`}
+                >
+                  {done ? (
+                    <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                  ) : (
+                    ix + 1
+                  )}
+                </span>
+                {!isLast && (
+                  <span
+                    className={`my-0.5 w-px flex-1 ${done ? "bg-primary" : "bg-border-strong"}`}
+                  />
                 )}
-              </span>
+              </div>
               <span
-                className={`text-[13px] ${
+                className={`pb-4 text-[13px] ${
                   now
                     ? "font-semibold text-foreground"
                     : done

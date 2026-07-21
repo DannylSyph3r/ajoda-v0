@@ -264,17 +264,48 @@ class PeriodService:
 
         return result
 
+    async def has_future_paid_contribution(self, coop_id: UUID) -> bool:
+        """Whether any member has already paid ahead of the coop's current period."""
+        current_period = await self.period_repo.get_current_period(coop_id)
+        if not current_period:
+            return False
+        return await self.period_repo.has_paid_future_period(
+            coop_id, current_period.period_number
+        )
+
     async def get_all_periods(self, coop_id: UUID) -> list[dict]:
         """All persisted periods for the coop, for the history filter dropdown."""
         periods = await self.period_repo.get_all_periods(coop_id)
-        return [
-            {
+
+        # Label each period from its OWN schedule (frequency may have changed
+        # since it was created), not the coop's current active schedule.
+        schedules = await self.schedule_repo.get_by_ids(
+            list({p.schedule_id for p in periods})
+        )
+        schedule_by_id = {s.id: s for s in schedules}
+
+        # A future period materialised by a pay-ahead is also closed_at IS NULL,
+        # so every un-closed row would read "current" — only the single
+        # lowest-numbered open period actually is (see get_current_period).
+        current_period = await self.period_repo.get_current_period(coop_id)
+        current_id = current_period.id if current_period else None
+
+        result = []
+        for p in periods:
+            schedule = schedule_by_id.get(p.schedule_id)
+            if schedule:
+                end_date = compute_period_end_date(
+                    schedule.anchor_date, Frequency(schedule.frequency), p.period_number
+                )
+                label = format_period_label(p.period_number, p.start_date, end_date)
+            else:
+                label = p.start_date.strftime("%B %Y")
+            result.append({
                 "id": p.id,
                 "period_number": p.period_number,
-                "label": p.start_date.strftime("%B %Y"),
+                "label": label,
                 "start_date": p.start_date,
                 "due_date": p.due_date,
-                "is_open": p.closed_at is None,
-            }
-            for p in periods
-        ]
+                "is_open": p.id == current_id,
+            })
+        return result
