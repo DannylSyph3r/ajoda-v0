@@ -15,7 +15,7 @@ resolved by a reconciliation pass, not synchronously.
 import logging
 import secrets
 import time
-from datetime import date
+from datetime import date, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -35,7 +35,13 @@ from app.services.payment_provider import get_payment_provider
 settings = get_settings()
 logger = logging.getLogger("akoweai")
 
-_MANDATE_VALIDITY_YEARS = 5
+# Monnify rejects "Mandate duration exceeds the maximum limit of 365 days" —
+# confirmed against a live sandbox response, not the docs. autoRenew=True is
+# already set on every create_mandate call (monnify_provider.py), so this cap
+# doesn't cost the member anything — Monnify renews the mandate itself rather
+# than requiring a fresh authorization each year. 364, not 365, as a one-day
+# safety margin against inclusive/exclusive date-range ambiguity.
+_MANDATE_VALIDITY_DAYS = 364
 
 
 def generate_mandate_reference() -> str:
@@ -94,7 +100,7 @@ class MandateService:
             raise NotFoundException("Cooperative not found")
 
         today = date.today()
-        end_date = today.replace(year=today.year + _MANDATE_VALIDITY_YEARS)
+        end_date = today + timedelta(days=_MANDATE_VALIDITY_DAYS)
         reference = generate_mandate_reference()
 
         mandate = await self.mandate_repo.create(
