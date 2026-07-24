@@ -696,12 +696,11 @@ async def direct_debit_webhook(
     the customer revokes it directly with their bank, or the bank suspends it).
     Same `monnify-signature` (HMAC-SHA512) scheme as the other webhooks.
 
-    [!] Monnify's docs describe this event ("Monnify sends a MANDATE_UPDATE
-    webhook whenever the mandate's status changes") but the example eventData
-    payload is rendered client-side on their docs site and wasn't recoverable —
-    the exact field names are unconfirmed. This reads every plausible key
-    defensively and logs the raw payload when nothing matches, so it can be
-    corrected against a real captured sandbox delivery.
+    Field names confirmed against a real captured payload: our own reference
+    (what we sent as `mandateReference` at creation) comes back as
+    `externalMandateReference` — Monnify's own `mandateCode` is a separate
+    field, and the status field is `mandateStatus` (there is no bare `status`
+    key on this event, unlike the disbursement/collection webhooks).
     """
     raw_body = await request.body()
     signature = request.headers.get("monnify-signature", "")
@@ -719,10 +718,8 @@ async def direct_debit_webhook(
     if event_type == "MANDATE_UPDATE":
         event_data = payload.get("eventData", {})
         mandate_code = str(event_data.get("mandateCode", "")).strip()
-        mandate_reference = str(event_data.get("mandateReference", "")).strip()
-        status = str(
-            event_data.get("status") or event_data.get("mandateStatus", "")
-        ).strip().upper()
+        mandate_reference = str(event_data.get("externalMandateReference", "")).strip()
+        status = str(event_data.get("mandateStatus", "")).strip().upper()
 
         if not (mandate_code or mandate_reference):
             logger.warning("Mandate webhook missing both identifiers: %s", payload)

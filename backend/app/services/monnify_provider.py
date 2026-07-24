@@ -453,15 +453,21 @@ class MonnifyProvider(PaymentProvider):
                 body.get("responseMessage") or "The mandate could not be created."
             )
         rb = body.get("responseBody") or {}
+        # Confirmed against Monnify's own docs sample: responseBody is sometimes
+        # shown wrapped in a single-item list rather than a bare object — handle
+        # both rather than assume one, since a bare .get() on a list would crash.
+        if isinstance(rb, list):
+            rb = rb[0] if rb else {}
         mandate_code = rb.get("mandateCode")
         if not mandate_code:
             raise InternalServerException("The payment provider returned no mandate code")
         return {
             "mandate_code": mandate_code,
             "status": rb.get("mandateStatus", ""),
-            # Best-known field for the customer-facing bank authorization link —
-            # confirm exactly which field this is once sandbox testing runs.
-            "authorization_link": rb.get("redirectUrl", ""),
+            # Confirmed field name from Monnify's docs sample response — it was
+            # previously read as "redirectUrl", which never existed in their
+            # response, so no member has ever actually received a working link.
+            "authorization_link": rb.get("authorizationLink", ""),
             "raw": rb,
         }
 
