@@ -8,8 +8,10 @@ import type {
   CooperativeListItem,
   CreateCoopRequest,
   CreateCoopResponse,
+  DirectDebitMandate,
   ExcoInviteResponse,
   GenerateJoinCodesResponse,
+  InitiateRefundRequest,
   InsightResponse,
   BankItem,
   WalletBalanceResponse,
@@ -19,6 +21,8 @@ import type {
   PaginatedWithdrawals,
   PeriodListItem,
   PeriodStatusItem,
+  RefundItem,
+  SetupDirectDebitRequest,
   UpdateSettingsRequest,
   VerifyRecipientResponse,
 } from "./types";
@@ -201,6 +205,54 @@ export async function getDisbursementStatus(
 export async function getInsights(coopId: string): Promise<InsightResponse> {
   const r = await apiClient.get(`/api/cooperatives/${coopId}/insights`);
   return r.data as InsightResponse;
+}
+
+export async function setupDirectDebit(
+  coopId: string,
+  data: SetupDirectDebitRequest,
+): Promise<DirectDebitMandate> {
+  const r = await apiClient.post(
+    `/api/cooperatives/${coopId}/direct-debit/setup`,
+    data,
+  );
+  return r.data as DirectDebitMandate;
+}
+
+export async function getDirectDebitStatus(
+  coopId: string,
+): Promise<DirectDebitMandate | null> {
+  const r = await apiClient.get(
+    `/api/cooperatives/${coopId}/direct-debit/status`,
+  );
+  return r.data as DirectDebitMandate | null;
+}
+
+export async function cancelDirectDebit(coopId: string): Promise<void> {
+  await apiClient.post(`/api/cooperatives/${coopId}/direct-debit/cancel`);
+}
+
+export async function refundContribution(
+  coopId: string,
+  contributionId: string,
+  data: InitiateRefundRequest,
+  stepUpToken: string,
+): Promise<RefundItem> {
+  const r = await apiClient.post(
+    `/api/cooperatives/${coopId}/contributions/${contributionId}/refund`,
+    data,
+    { headers: { "X-Step-Up-Token": stepUpToken } },
+  );
+  return r.data as RefundItem;
+}
+
+export async function getRefundStatus(
+  coopId: string,
+  refundId: string,
+): Promise<RefundItem> {
+  const r = await apiClient.get(
+    `/api/cooperatives/${coopId}/contributions/refunds/${refundId}`,
+  );
+  return r.data as RefundItem;
 }
 
 export async function broadcastMessage(

@@ -11,6 +11,7 @@ const ACTION_LABELS: Record<StepUpAction, string> = {
   WITHDRAWAL: "New withdrawal",
   BROADCAST: "Send Broadcast",
   SETTINGS: "Update Settings",
+  REFUND: "Refund a contribution",
 };
 
 interface StepUpModalProps {

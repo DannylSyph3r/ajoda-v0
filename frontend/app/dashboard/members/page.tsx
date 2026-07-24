@@ -15,8 +15,23 @@ import {
 import { formatNaira, formatDate } from "@/lib/utils";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { RiskBadge } from "@/components/ui/Badge";
+import { RiskBadge, Status } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
+import type { AutopayStatus } from "@/lib/api/types";
+
+const AUTOPAY_LABEL: Record<NonNullable<AutopayStatus>, { kind: "success" | "info" | "warning"; label: string }> = {
+  active: { kind: "success", label: "Active" },
+  pending: { kind: "info", label: "Pending" },
+  needs_attention: { kind: "warning", label: "Needs attention" },
+};
+
+function AutopayBadge({ status }: { status: AutopayStatus }) {
+  if (!status) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  const { kind, label } = AUTOPAY_LABEL[status];
+  return <Status kind={kind}>{label}</Status>;
+}
 
 function CopyButton({
   text,
@@ -84,6 +99,7 @@ function MemberCard({
     periods_paid: number;
     last_paid_at: string | null;
     risk_level: "LOW" | "MEDIUM" | "HIGH";
+    autopay_status: AutopayStatus;
   };
 }) {
   return (
@@ -114,11 +130,17 @@ function MemberCard({
           </dt>
           <dd className="font-medium text-foreground">{member.periods_paid}</dd>
         </div>
-        <div className="col-span-2 space-y-1">
+        <div className="space-y-1">
           <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
             Last Payment
           </dt>
           <dd className="text-foreground">{formatDate(member.last_paid_at)}</dd>
+        </div>
+        <div className="space-y-1">
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
+            Auto-pay
+          </dt>
+          <dd><AutopayBadge status={member.autopay_status} /></dd>
         </div>
       </dl>
     </article>
@@ -318,6 +340,7 @@ export default function MembersPage() {
                   "Total Contributed",
                   "Periods Paid",
                   "Last Payment",
+                  "Auto-pay",
                   "Risk",
                 ].map((heading) => (
                   <th
@@ -333,7 +356,7 @@ export default function MembersPage() {
               {membersLoading
                 ? Array.from({ length: 5 }).map((_, rowIndex) => (
                     <tr key={rowIndex}>
-                      {Array.from({ length: 6 }).map((_, cellIndex) => (
+                      {Array.from({ length: 7 }).map((_, cellIndex) => (
                         <td key={cellIndex} className="px-4 py-3">
                           <Skeleton className="h-4 w-24" />
                         </td>
@@ -361,6 +384,9 @@ export default function MembersPage() {
                         {member.last_paid_at ? formatDate(member.last_paid_at) : "-"}
                       </td>
                       <td className="px-4 py-3">
+                        <AutopayBadge status={member.autopay_status} />
+                      </td>
+                      <td className="px-4 py-3">
                         <RiskBadge level={member.risk_level} />
                       </td>
                     </tr>
@@ -368,7 +394,7 @@ export default function MembersPage() {
               {!membersLoading && filtered.length === 0 && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-4 py-8 text-center text-sm text-muted-foreground"
                   >
                     No members found.

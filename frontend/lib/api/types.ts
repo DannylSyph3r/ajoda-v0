@@ -19,7 +19,7 @@ export interface StepUpResponse {
   expires_in: number;
 }
 
-export type StepUpAction = "WITHDRAWAL" | "BROADCAST" | "SETTINGS";
+export type StepUpAction = "WITHDRAWAL" | "BROADCAST" | "SETTINGS" | "REFUND";
 
 // Cooperatives
 
@@ -73,6 +73,8 @@ export interface UpdateSettingsRequest {
 
 export type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
 
+export type AutopayStatus = "active" | "pending" | "needs_attention" | null;
+
 export interface MemberListItem {
   member_id: string;
   full_name: string;
@@ -82,6 +84,7 @@ export interface MemberListItem {
   total_contributed: number;
   periods_paid: number;
   last_paid_at: string | null;
+  autopay_status: AutopayStatus;
 }
 
 export interface JoinCodeItem {
@@ -125,7 +128,8 @@ export interface PeriodStatusItem {
   member_id: string;
   full_name: string;
   amount: number;
-  status: "paid" | "unpaid";
+  status: "paid" | "unpaid" | "refunded";
+  contribution_id?: string;
 }
 
 // Periods
@@ -200,6 +204,40 @@ export interface DisbursementResponse {
   destination_account_name: string | null;
   failure_reason: string | null;
   pool_balance_after: number | null;
+  created_at: string;
+}
+
+// Direct debit (auto-pay)
+
+export interface SetupDirectDebitRequest {
+  account_number: string;
+  bank_code: string;
+}
+
+export interface DirectDebitMandate {
+  mandate_id: string;
+  status: string;
+  authorization_link: string | null;
+  mandate_amount_kobo: number;
+  created_at: string;
+}
+
+// Refunds
+
+export type RefundStatus = "PENDING" | "COMPLETED" | "FAILED";
+export type RefundType = "PARTIAL_REFUND" | "FULL_REFUND";
+
+export interface InitiateRefundRequest {
+  amount_kobo: number;
+  reason: string;
+}
+
+export interface RefundItem {
+  refund_id: string;
+  contribution_id: string;
+  status: RefundStatus;
+  refund_type: RefundType;
+  amount: number;
   created_at: string;
 }
 

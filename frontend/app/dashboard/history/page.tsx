@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCoop } from "@/context/CoopContext";
 import {
   getPeriods,
@@ -9,8 +9,22 @@ import {
   getPeriodStatus,
 } from "@/lib/api/cooperatives";
 import { formatNaira, formatDate } from "@/lib/utils";
-import { RiskBadge, Status } from "@/components/ui/Badge";
+import { RiskBadge, Status, type StatusKind } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { StepUpModal } from "@/components/modals/StepUpModal";
+import { RefundModal } from "@/components/modals/RefundModal";
+
+const PERIOD_STATUS_META: Record<string, { kind: StatusKind; label: string }> = {
+  paid: { kind: "success", label: "Paid" },
+  unpaid: { kind: "danger", label: "Unpaid" },
+  refunded: { kind: "info", label: "Refunded" },
+};
+
+interface RefundTarget {
+  contributionId: string;
+  memberName: string;
+  amountKobo: number;
+}
 
 function ContributionSummaryCard({
   index,
@@ -74,31 +88,53 @@ function ContributionSummaryCard({
 
 function PeriodStatusCard({
   row,
+  onRefund,
 }: {
   row: {
     member_id: string;
     full_name: string;
     amount: number;
-    status: "paid" | "unpaid";
+    status: "paid" | "unpaid" | "refunded";
+    contribution_id?: string;
   };
+  onRefund: (target: RefundTarget) => void;
 }) {
+  const meta = PERIOD_STATUS_META[row.status] ?? {
+    kind: "neutral" as StatusKind,
+    label: row.status,
+  };
   return (
     <article className="space-y-3 rounded-md border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
         <h2 className="min-w-0 truncate text-sm font-semibold text-foreground">
           {row.full_name}
         </h2>
-        <Status kind={row.status === "paid" ? "success" : "danger"}>
-          {row.status === "paid" ? "Paid" : "Unpaid"}
-        </Status>
+        <Status kind={meta.kind}>{meta.label}</Status>
       </div>
-      <div className="space-y-1 text-sm">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
-          Amount
-        </p>
-        <p className="font-medium text-foreground">
-          {row.amount > 0 ? formatNaira(row.amount) : "—"}
-        </p>
+      <div className="flex items-end justify-between gap-3">
+        <div className="space-y-1 text-sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
+            Amount
+          </p>
+          <p className="font-medium text-foreground">
+            {row.amount > 0 ? formatNaira(row.amount) : "—"}
+          </p>
+        </div>
+        {row.status === "paid" && row.contribution_id && (
+          <button
+            type="button"
+            onClick={() =>
+              onRefund({
+                contributionId: row.contribution_id!,
+                memberName: row.full_name,
+                amountKobo: row.amount,
+              })
+            }
+            className="rounded-sm px-3 py-3.5 text-xs font-medium text-destructive transition-colors hover:bg-muted hover:text-destructive/80"
+          >
+            Refund
+          </button>
+        )}
       </div>
     </article>
   );
@@ -108,6 +144,7 @@ export default function HistoryPage() {
   const { activeCoop } = useCoop();
   const coopId = activeCoop?.id ?? "";
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>("all");
+  const queryClient = useQueryClient();
 
   const { data: periods = [], isLoading: periodsLoading } = useQuery({
     queryKey: ["coop", coopId, "periods"],
@@ -128,6 +165,30 @@ export default function HistoryPage() {
   });
 
   const isLoading = selectedPeriodId === "all" ? summaryLoading : statusLoading;
+
+  const [refundTarget, setRefundTarget] = useState<RefundTarget | null>(null);
+  const [stepUpOpen, setStepUpOpen] = useState(false);
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [stepUpToken, setStepUpToken] = useState("");
+
+  const handleRefundRequest = (target: RefundTarget) => {
+    setRefundTarget(target);
+    setStepUpOpen(true);
+  };
+
+  const handleAuthorized = (token: string) => {
+    setStepUpToken(token);
+    setRefundOpen(true);
+  };
+
+  const handleRefundSuccess = () => {
+    queryClient.invalidateQueries({
+      queryKey: ["coop", coopId, "period-status", selectedPeriodId],
+    });
+    queryClient.invalidateQueries({
+      queryKey: ["coop", coopId, "contributions-summary"],
+    });
+  };
 
   return (
     <div className="space-y-5 sm:space-y-6">
@@ -178,7 +239,11 @@ export default function HistoryPage() {
                   />
                 ))
               : periodStatus.map((row) => (
-                  <PeriodStatusCard key={row.member_id} row={row} />
+                  <PeriodStatusCard
+                    key={row.member_id}
+                    row={row}
+                    onRefund={handleRefundRequest}
+                  />
                 ))}
           {!isLoading &&
             ((selectedPeriodId === "all" && summary.length === 0) ||
@@ -257,7 +322,7 @@ export default function HistoryPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted">
-                  {["Member", "Amount", "Status"].map((h) => (
+                  {["Member", "Amount", "Status", ""].map((h) => (
                     <th
                       key={h}
                       className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.05em] text-tertiary"
@@ -271,40 +336,77 @@ export default function HistoryPage() {
                 {isLoading
                   ? Array.from({ length: 5 }).map((_, i) => (
                       <tr key={i}>
-                        {Array.from({ length: 3 }).map((_, j) => (
+                        {Array.from({ length: 4 }).map((_, j) => (
                           <td key={j} className="px-4 py-3">
                             <Skeleton className="h-4 w-24" />
                           </td>
                         ))}
                       </tr>
                     ))
-                  : periodStatus.map((row) => (
-                      <tr
-                        key={row.member_id}
-                        className="hover:bg-muted transition-colors"
-                      >
-                        <td className="px-4 py-3 font-medium text-foreground">
-                          {row.full_name}
-                        </td>
-                        <td className="px-4 py-3 text-foreground">
-                          {row.amount > 0 ? formatNaira(row.amount) : "—"}
-                        </td>
-                        <td className="px-4 py-3">
-                          <Status
-                            kind={
-                              row.status === "paid" ? "success" : "danger"
-                            }
-                          >
-                            {row.status === "paid" ? "Paid" : "Unpaid"}
-                          </Status>
-                        </td>
-                      </tr>
-                    ))}
+                  : periodStatus.map((row) => {
+                      const meta = PERIOD_STATUS_META[row.status] ?? {
+                        kind: "neutral" as StatusKind,
+                        label: row.status,
+                      };
+                      return (
+                        <tr
+                          key={row.member_id}
+                          className="hover:bg-muted transition-colors"
+                        >
+                          <td className="px-4 py-3 font-medium text-foreground">
+                            {row.full_name}
+                          </td>
+                          <td className="px-4 py-3 text-foreground">
+                            {row.amount > 0 ? formatNaira(row.amount) : "—"}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Status kind={meta.kind}>{meta.label}</Status>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {row.status === "paid" && row.contribution_id && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleRefundRequest({
+                                    contributionId: row.contribution_id!,
+                                    memberName: row.full_name,
+                                    amountKobo: row.amount,
+                                  })
+                                }
+                                className="relative text-xs font-medium text-destructive transition-colors before:absolute before:-inset-2.5 before:content-[''] hover:text-destructive/80"
+                              >
+                                Refund
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
               </tbody>
             </table>
           )}
         </div>
       </div>
+
+      <StepUpModal
+        open={stepUpOpen}
+        onClose={() => setStepUpOpen(false)}
+        action="REFUND"
+        onAuthorized={handleAuthorized}
+      />
+
+      {refundTarget && (
+        <RefundModal
+          open={refundOpen}
+          onClose={() => setRefundOpen(false)}
+          coopId={coopId}
+          stepUpToken={stepUpToken}
+          contributionId={refundTarget.contributionId}
+          memberName={refundTarget.memberName}
+          maxAmountKobo={refundTarget.amountKobo}
+          onSuccess={handleRefundSuccess}
+        />
+      )}
     </div>
   );
 }
