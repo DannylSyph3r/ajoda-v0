@@ -378,9 +378,22 @@ async def handle_pay_period_selected(
     total_str = _format_naira(selected_total)
     period_label = period.get("label", "Period")
 
+    if len(selected_periods) > 1:
+        stack_lines = "\n".join(
+            f"• {p.get('label', 'Period')} — {_format_naira(p['amount'])}"
+            for p in selected_periods
+        )
+        body = (
+            f"✅ Added: *{period_label}*\n\n"
+            f"You're paying for:\n{stack_lines}\n\n"
+            f"Total selected: *{total_str}*\n\nWhat would you like to do?"
+        )
+    else:
+        body = f"✅ Added: *{period_label}*\n\nTotal selected: *{total_str}*\n\nWhat would you like to do?"
+
     await send_reply_buttons(
         phone,
-        f"✅ Added: *{period_label}*\n\nTotal selected: *{total_str}*\n\nWhat would you like to do?",
+        body,
         [
             {"id": "add_period", "title": "➕ Add Another Period"},
             {"id": "confirm_pay", "title": f"💳 Pay {total_str}"},
@@ -472,6 +485,9 @@ async def handle_confirm_pay(
     )
     url = payment_svc.build_payment_initiation_url(transaction.reference)
     total_str = _format_naira(total_kobo)
+    stack_lines = "\n".join(
+        f"• {p.get('label', 'Period')}" for p in selected_periods
+    )
 
     # Reset flow state
     session.current_flow = None
@@ -480,7 +496,7 @@ async def handle_confirm_pay(
 
     await send_cta_url_button(
         to=phone,
-        body=f"💳 You're paying *{total_str}* for {len(selected_periods)} period(s).",
+        body=f"💳 You're paying *{total_str}* for:\n{stack_lines}",
         button_text="Pay Now",
         url=url,
     )
