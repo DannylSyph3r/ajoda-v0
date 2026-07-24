@@ -51,6 +51,14 @@ _BLOCKING_FLOWS = {
     ConversationFlow.AUTOPAY_ENABLE.value,
 }
 
+# Free text that always breaks out of a blocking flow, regardless of which step
+# it's on — typing one of these is unambiguously an attempt to leave, not an
+# answer to whatever the flow just asked. Exact match only (after trim/lowercase)
+# so it can never misfire on real flow input (an OTP, an account number, a name
+# that happens to contain one of these words). Deliberately not run through
+# Gemini — same reasoning as the blocking-flow redirect itself.
+_ESCAPE_KEYWORDS = {"cancel", "stop", "restart", "reset", "menu", "hi", "hello", "hey"}
+
 _gemini_flash: GeminiFlashClient | None = None
 
 
@@ -139,8 +147,12 @@ async def route_message(
     if message_type == "text":
         text = message_data.get("text", "")
 
-        # Active blocking flow: redirect text back into the flow without LLM
+        # Active blocking flow: redirect text back into the flow without LLM —
+        # except a small set of universal escape words, which always break out
+        # regardless of what the flow is waiting on (see _ESCAPE_KEYWORDS).
         if session.current_flow in _BLOCKING_FLOWS:
+            if text.strip().lower() in _ESCAPE_KEYWORDS:
+                return Intent.CANCEL, {}
             try:
                 return Intent(session.current_flow), {}
             except ValueError:
