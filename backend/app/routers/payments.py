@@ -200,6 +200,169 @@ _COMPLETION_HTML_TEMPLATE = """<!DOCTYPE html>
 </body>
 </html>"""
 
+# Shared card chrome for terminal payment-bridge dead ends (expired link,
+# provider init failure) — same visual language as the completion page above,
+# just without the txn-ref box or the mobile/desktop close-button branching
+# (there's nothing async left to wait on, so "Back to WhatsApp" is always the
+# right action).
+_STATUS_PAGE_TEMPLATE = """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ajoda</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;620;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
+            font-family: 'Schibsted Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-color: #F2E7D3;
+            background-image: url('/static/ajodazigzag.png');
+            background-repeat: repeat;
+            background-size: 240px;
+            padding: 24px;
+            position: relative;
+        }}
+        body::before {{
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: rgba(242, 231, 211, 0.92);
+        }}
+        .card {{
+            position: relative;
+            background: #ffffff;
+            border: 1px solid #e9ecea;
+            border-radius: 14px;
+            padding: 40px 32px;
+            max-width: 420px;
+            width: 100%;
+            box-shadow: 0 4px 24px rgba(20, 40, 30, 0.08);
+            text-align: center;
+        }}
+        .logo-banner {{
+            width: 132px;
+            height: auto;
+            margin: 0 auto 20px;
+            display: block;
+        }}
+        .icon-badge {{
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            background: {icon_bg};
+            color: {icon_fg};
+        }}
+        h1 {{
+            font-size: 20px;
+            font-weight: 620;
+            color: #171a19;
+            margin-bottom: 10px;
+        }}
+        .subtitle {{
+            font-size: 15px;
+            color: #565e5a;
+            line-height: 1.6;
+            margin-bottom: 28px;
+        }}
+        .action-btn {{
+            display: block;
+            width: 100%;
+            background: #245537;
+            color: #ffffff;
+            text-decoration: none;
+            padding: 14px 24px;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: background 0.15s ease;
+        }}
+        .action-btn:hover {{ background: #1A352B; }}
+        .action-btn:focus-visible {{ outline: 2px solid #245537; outline-offset: 2px; }}
+        .footer {{
+            margin-top: 26px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecea;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }}
+        .footer-label {{
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #9ca3af;
+        }}
+        .monnify-mark {{
+            width: 104px;
+            height: auto;
+            display: block;
+            opacity: 0.9;
+        }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <img class="logo-banner" src="/static/ajodalogolockup.png" alt="Ajoda" width="496" height="162">
+        <div class="icon-badge">{icon_svg}</div>
+        <h1>{heading}</h1>
+        <p class="subtitle">{subtitle}</p>
+        <a class="action-btn" href="{wa_link}">&larr; Back to WhatsApp</a>
+        <div class="footer">
+            <span class="footer-label">Payments secured by</span>
+            <img class="monnify-mark" src="/static/monnifylogogrey.svg" alt="Monnify" width="831" height="186">
+        </div>
+    </div>
+</body>
+</html>"""
+
+_STATUS_ICONS = {
+    # (background tint, icon color, glyph) — tints are the semantic warning/
+    # destructive colors at ~10% alpha, matching the dashboard's own
+    # warning/destructive tokens (frontend/app/globals.css).
+    "warning": (
+        "#93601a1a",
+        "#93601a",
+        '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" '
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M10.29 3.86 1.82 18a1 1 0 0 0 .86 1.5h18.64a1 1 0 0 0 .86-1.5L13.71 '
+        '3.86a1.5 1.5 0 0 0-2.62 0Z"/><path d="M12 9v4M12 17h.01"/></svg>',
+    ),
+    "error": (
+        "#b0271c1a",
+        "#b0271c",
+        '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" '
+        'stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M18 6 6 18M6 6l12 12"/></svg>',
+    ),
+}
+
+
+def _status_page_html(*, heading: str, subtitle: str, icon: str, wa_link: str) -> str:
+    icon_bg, icon_fg, icon_svg = _STATUS_ICONS[icon]
+    return _STATUS_PAGE_TEMPLATE.format(
+        heading=heading,
+        subtitle=subtitle,
+        icon_bg=icon_bg,
+        icon_fg=icon_fg,
+        icon_svg=icon_svg,
+        wa_link=wa_link,
+    )
+
 
 # Background task — runs after response is sent, owns its own DB session
 async def _verify_and_process_payment(txnref: str) -> None:
@@ -350,7 +513,15 @@ async def payment_initiate(
     transaction = await payment_repo.get_by_reference(reference)
     if not transaction or transaction.status not in ("pending",):
         return HTMLResponse(
-            content="<html><body><p>This payment link is no longer valid.</p></body></html>",
+            content=_status_page_html(
+                heading="This link is no longer valid",
+                subtitle="This can happen if the payment already went through, "
+                "or a newer link replaced this one. If you already paid, check "
+                "WhatsApp for your receipt — otherwise head back and ask for a "
+                "fresh link.",
+                icon="warning",
+                wa_link=f"https://wa.me/{settings.whatsapp_contact_number}",
+            ),
             status_code=410,
         )
 
@@ -378,8 +549,13 @@ async def payment_initiate(
     except AppException:
         logger.exception("Monnify initialize failed for ref=%s", reference)
         return HTMLResponse(
-            content="<html><body><p>We could not start your payment right now. "
-            "Please return to WhatsApp and try again.</p></body></html>",
+            content=_status_page_html(
+                heading="We couldn't start your payment",
+                subtitle="Something went wrong on our end and no money has "
+                "moved. Please return to WhatsApp and try again in a moment.",
+                icon="error",
+                wa_link=f"https://wa.me/{settings.whatsapp_contact_number}",
+            ),
             status_code=502,
         )
 
