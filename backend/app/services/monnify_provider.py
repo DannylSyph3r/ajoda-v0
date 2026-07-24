@@ -509,6 +509,28 @@ class MonnifyProvider(PaymentProvider):
             "raw": rb,
         }
 
+    async def get_mandate_status(self, mandate_reference: str) -> dict:
+        body = await self._call(
+            "GET",
+            f"{self.base_url}/api/v1/direct-debit/mandate/",
+            "check mandate status",
+            params={"mandateReferences": mandate_reference},
+        )
+        if not body.get("requestSuccessful"):
+            raise InternalServerException("Could not fetch the mandate status")
+        rb = body.get("responseBody") or {}
+        # Confirmed via a live sandbox call: responseBody is a list, one entry
+        # per requested reference (the plural "mandateReferences" param name is
+        # literal — it can take more than one, comma-separated).
+        if isinstance(rb, list):
+            rb = rb[0] if rb else {}
+        return {
+            "status": rb.get("mandateStatus", ""),
+            "mandate_code": rb.get("mandateCode", ""),
+            "authorization_link": rb.get("authorizationLink", ""),
+            "raw": rb,
+        }
+
     async def debit_mandate(
         self,
         *,

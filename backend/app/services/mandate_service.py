@@ -15,7 +15,7 @@ resolved by a reconciliation pass, not synchronously.
 import logging
 import secrets
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import select
@@ -224,6 +224,52 @@ class MandateService:
                     "Auto-pay cascade notification failed to %s: %s",
                     member.phone_number, exc,
                 )
+
+    # ------------------------------------------------------------------ #
+    # Reconciliation-on-read
+    # ------------------------------------------------------------------ #
+    async def refresh_mandate_status(
+        self, mandate: DirectDebitMandate
+    ) -> DirectDebitMandate:
+        """
+        Actively re-check a mandate's status with Monnify rather than trusting
+        our own row — which is only ever written once at creation, or later by
+        a MANDATE_UPDATE webhook delivery (never confirmed to be registered
+        with Monnify, and its payload carries no authorization link even when
+        it does fire). Mirrors the reconcile-on-read pattern already used for
+        refunds and disbursements. Best-effort: a provider failure just leaves
+        the existing row untouched rather than raising.
+        """
+        try:
+            result = await get_payment_provider().get_mandate_status(
+                mandate.mandate_reference
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Mandate status refresh failed for %s: %s",
+                mandate.mandate_reference, exc,
+            )
+            return mandate
+
+        new_status = result.get("status") or mandate.status
+        new_link = result.get("authorization_link") or ""
+        was_active = mandate.status in MANDATE_ACTIVE_STATUSES
+        became_active = new_status in MANDATE_ACTIVE_STATUSES and not was_active
+
+        if new_status != mandate.status or (new_link and new_link != mandate.authorization_link):
+            await self.mandate_repo.update_status(
+                mandate.id,
+                status=new_status,
+                authorized_at=datetime.now(timezone.utc) if became_active else None,
+            )
+            if new_link:
+                await self.mandate_repo.set_authorization_link(mandate.id, new_link)
+            await self.db.commit()
+            mandate.status = new_status
+            if new_link:
+                mandate.authorization_link = new_link
+
+        return mandate
 
     # ------------------------------------------------------------------ #
     # Mandate status webhook (MANDATE_UPDATE)

@@ -69,7 +69,7 @@ async def handle_autopay_flow(
     if session.current_flow != _FLOW:
         existing = await mandate_svc.get_active_mandate(member.id, coop_id)
         if existing:
-            await _show_existing_mandate(phone, existing)
+            await _show_existing_mandate(phone, existing, mandate_svc)
             return
 
         coop = await CooperativeRepository(db).get_by_id(coop_id)
@@ -170,7 +170,16 @@ async def handle_autopay_cancel_flow(
     )
 
 
-async def _show_existing_mandate(phone: str, mandate) -> None:
+async def _show_existing_mandate(
+    phone: str, mandate, mandate_svc: MandateService
+) -> None:
+    # Reconciliation-on-read: our row is only ever written once at creation
+    # (or by a webhook that's never confirmed registered), so actively check
+    # with Monnify before deciding what to tell the member — a mandate can
+    # activate on Monnify's own timeline with no action from us in between.
+    if mandate.status not in MANDATE_ACTIVE_STATUSES:
+        mandate = await mandate_svc.refresh_mandate_status(mandate)
+
     amount_naira = mandate.mandate_amount_kobo // 100
     if mandate.status in MANDATE_ACTIVE_STATUSES:
         await send_reply_buttons(

@@ -147,6 +147,16 @@ class PaymentProvider(ABC):
         ...
 
     @abstractmethod
+    async def get_mandate_status(self, mandate_reference: str) -> dict:
+        """
+        Reconciliation-on-read: check a mandate's current status directly with
+        the provider rather than trusting our own possibly-stale row (mirrors
+        get_refund_status / get_transfer_status). Returns a normalized dict:
+            {"status": str, "mandate_code": str, "authorization_link": str, "raw": dict}
+        """
+        ...
+
+    @abstractmethod
     async def debit_mandate(
         self,
         *,
