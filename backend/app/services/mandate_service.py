@@ -270,9 +270,14 @@ class MandateService:
 
             status = (outcome.get("status") or "").upper()
             if status == DebitStatus.PAID.value:
+                # Monnify's own transaction reference — not our pending_debit_reference
+                # (paymentReference) — is what a later refund must target.
                 settled = await self.payment_repo.settle_single_contribution_if_unpaid(
                     mandate.pending_debit_contribution_id,
-                    settlement_reference=mandate.pending_debit_reference,
+                    settlement_reference=(
+                        outcome.get("transaction_reference")
+                        or mandate.pending_debit_reference
+                    ),
                 )
                 if settled:
                     amount_result = await self.db.execute(

@@ -219,6 +219,10 @@ class MonnifyProvider(PaymentProvider):
         return {
             "status": rb.get("paymentStatus", ""),
             "amount_kobo": _naira_to_kobo(amount_paid),
+            # Monnify's own transaction reference — distinct from the
+            # paymentReference we generated, and the value refunds must be
+            # initiated against (see initiate_refund).
+            "transaction_reference": rb.get("transactionReference", ""),
             "raw": rb,
         }
 
@@ -500,7 +504,11 @@ class MonnifyProvider(PaymentProvider):
         if not body.get("requestSuccessful"):
             raise InternalServerException("Could not fetch the debit status")
         rb = body.get("responseBody") or {}
-        return {"status": rb.get("transactionStatus", ""), "raw": rb}
+        return {
+            "status": rb.get("transactionStatus", ""),
+            "transaction_reference": rb.get("transactionReference", ""),
+            "raw": rb,
+        }
 
     async def cancel_mandate(self, mandate_code: str) -> dict:
         body = await self._call(

@@ -116,7 +116,7 @@ class PaymentService:
         return await self.payment_repo.is_already_paid(reference)
 
     async def process_successful_payment(
-        self, transaction: PendingTransaction
+        self, transaction: PendingTransaction, monnify_transaction_reference: str = ""
     ) -> None:
         """
         Apply settlement side-effects for a paid transaction: mark contributions
@@ -124,11 +124,17 @@ class PaymentService:
         row is flipped to 'paid' atomically by PaymentRepository.settle_if_pending()
         before this runs, so this method only handles the downstream effects and
         must be called exactly once per settlement.
+
+        `monnify_transaction_reference` is Monnify's own transaction reference
+        (from the Verify Transaction response) — distinct from our own
+        `transaction.reference` (paymentReference) — and is what a later refund
+        must be initiated against. Falls back to our own reference only if
+        Monnify didn't return one, so settlement never fails on a missing value.
         """
         await self.payment_repo.mark_contributions_paid(
             transaction.period_ids,
             transaction.member_id,
-            settlement_reference=transaction.reference,
+            settlement_reference=monnify_transaction_reference or transaction.reference,
         )
         await self.payment_repo.increment_pool_balance(
             transaction.cooperative_id, transaction.amount

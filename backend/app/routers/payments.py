@@ -413,7 +413,9 @@ async def _verify_and_process_payment(txnref: str) -> None:
                 # Atomic settle — only the caller that flips pending->paid runs the
                 # money side-effects; a duplicate delivery is a no-op.
                 if await payment_repo.settle_if_pending(txnref):
-                    await payment_svc.process_successful_payment(transaction)
+                    await payment_svc.process_successful_payment(
+                        transaction, result.get("transaction_reference", "")
+                    )
                     await db.commit()
                     await _send_payment_receipt(transaction)
                 return
