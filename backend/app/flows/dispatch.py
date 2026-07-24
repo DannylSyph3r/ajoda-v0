@@ -65,16 +65,34 @@ async def send_member_main_menu(
 async def send_exco_main_menu(
     phone: str,
     name: str,
+    db: AsyncSession,
+    member_id: UUID,
+    coop_id: UUID | None,
     coop_name: str = "",
     multi_coop: bool = False,
 ) -> None:
+    """
+    Exco are members too — they contribute their own share, so they get the same
+    Auto-pay entry point as the member menu. WhatsApp caps interactive lists at
+    10 rows total; this menu was already at 9 (10 with the multi-coop switcher
+    row), so "AI Summary" was dropped from the list to make room. It's still
+    reachable free-text (COOP_SUMMARY is already a Gemini-classified intent),
+    same precedent as disbursement-history.
+    """
     greeting = (
         f"Hello {name} 👋\nWhat would you like to do?"
         if name
-        else "Here's your menu 👇"
+        else "Here's what I can help you with 👇"
     )
     if coop_name:
         greeting = f"🏦 *{coop_name}*\n{greeting}"
+
+    autopay_bucket = None
+    if coop_id is not None:
+        from app.repositories.mandate_repository import MandateRepository
+
+        mandate = await MandateRepository(db).get_active_mandate(member_id, coop_id)
+        autopay_bucket = bucket_mandate_status(mandate.status if mandate else None)
 
     sections = [
         {
@@ -83,6 +101,7 @@ async def send_exco_main_menu(
                 {"id": "pay_now", "title": "💰 Pay Contribution"},
                 {"id": "my_balance", "title": "📊 My Balance"},
                 {"id": "full_history", "title": "📜 Payment History"},
+                {"id": "autopay", "title": _AUTOPAY_ROW_LABEL[autopay_bucket]},
             ],
         },
         {
@@ -93,7 +112,6 @@ async def send_exco_main_menu(
                 {"id": "member_lookup", "title": "🔍 Member Lookup"},
                 {"id": "disburse", "title": "💸 Withdraw Funds"},
                 {"id": "broadcast", "title": "📢 Broadcast Message"},
-                {"id": "ai_summary", "title": "🤖 AI Summary"},
             ],
         },
     ]
@@ -233,7 +251,7 @@ async def dispatch_intent(
         )
         if new_coop_role == Role.EXCO.value:
             await send_exco_main_menu(
-                phone, member.full_name,
+                phone, member.full_name, db, member.id, new_coop_id,
                 coop_name=new_coop_name,
                 multi_coop=len(coops) > 1,
             )
@@ -264,7 +282,7 @@ async def dispatch_intent(
     if intent == Intent.REGISTER:
         if is_exco:
             await send_exco_main_menu(
-                phone, member.full_name,
+                phone, member.full_name, db, member.id, coop_id,
                 coop_name=active_coop_name,
                 multi_coop=len(coops) > 1,
             )
@@ -399,7 +417,7 @@ async def dispatch_intent(
         await send_text_message(phone, "Cancelled. ✅")
         if is_exco:
             await send_exco_main_menu(
-                phone, member.full_name,
+                phone, member.full_name, db, member.id, coop_id,
                 coop_name=active_coop_name,
                 multi_coop=len(coops) > 1,
             )
@@ -409,13 +427,17 @@ async def dispatch_intent(
             )
 
     elif intent == Intent.GREETING:
+        first_name = member.full_name.split()[0] if member.full_name else "there"
         await send_text_message(
             phone,
-            "Hey there! 👋 Great to hear from you.\n\nUse the menu below to pay contributions, check your balance, or manage your cooperative.",
+            f"Hey {first_name}! 👋\n\n"
+            "Good to see you. I can help you pay a contribution, check your "
+            "balance, or keep things running smoothly for the cooperative.\n\n"
+            "Tap an option below, or just tell me what you need.",
         )
         if is_exco:
             await send_exco_main_menu(
-                phone, "",
+                phone, "", db, member.id, coop_id,
                 coop_name=active_coop_name,
                 multi_coop=len(coops) > 1,
             )
@@ -427,7 +449,7 @@ async def dispatch_intent(
     elif intent == Intent.SHOW_MENU:
         if is_exco:
             await send_exco_main_menu(
-                phone, member.full_name,
+                phone, member.full_name, db, member.id, coop_id,
                 coop_name=active_coop_name,
                 multi_coop=len(coops) > 1,
             )
@@ -446,7 +468,7 @@ async def dispatch_intent(
         else:
             if is_exco:
                 await send_exco_main_menu(
-                    phone, member.full_name,
+                    phone, member.full_name, db, member.id, coop_id,
                     coop_name=active_coop_name,
                     multi_coop=False,
                 )
@@ -463,7 +485,7 @@ async def dispatch_intent(
 
     else:
         from app.services.intent_service import send_fallback_menu
-        await send_fallback_menu(phone, coop_member_role)
+        await send_fallback_menu(phone, coop_member_role, db, member.id, coop_id)
 
 
 async def _permission_denied(phone: str) -> None:

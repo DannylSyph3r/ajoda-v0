@@ -1,4 +1,8 @@
 import logging
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.enums import ConversationFlow, Intent
 from app.models.conversation_session import ConversationSession
 from app.models.member import Member
@@ -148,7 +152,13 @@ async def route_message(
     return Intent.UNKNOWN, {}
 
 
-async def send_fallback_menu(phone: str, role: str) -> None:
+async def send_fallback_menu(
+    phone: str,
+    role: str,
+    db: AsyncSession,
+    member_id: UUID,
+    coop_id: UUID | None,
+) -> None:
     """Send fallback message when intent is UNKNOWN."""
     await send_text_message(
         phone,
@@ -156,7 +166,7 @@ async def send_fallback_menu(phone: str, role: str) -> None:
     )
     if role == "exco":
         from app.flows.dispatch import send_exco_main_menu
-        await send_exco_main_menu(phone, "")
+        await send_exco_main_menu(phone, "", db, member_id, coop_id)
     else:
         await send_reply_buttons(
             phone,
