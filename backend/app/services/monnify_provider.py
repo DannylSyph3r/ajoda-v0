@@ -41,6 +41,41 @@ _token_lock = asyncio.Lock()
 _banks_cache: dict = {"banks": None}
 _banks_lock = asyncio.Lock()
 
+# The fixed set of banks Monnify supports for Direct Debit mandates — a static
+# table from their docs (not a live-queryable endpoint; get_banks() returns the
+# full ~100+ bank disbursement list, most of which mandates don't work against
+# at all). Not exhaustive of Monnify's own future changes — extend as their
+# docs update. "Default Activation Mode" per that table isn't tracked here;
+# every one of these authorizes via URL per Monnify's own Direct Debit flow docs.
+_DIRECT_DEBIT_BANKS: list[dict] = [
+    {"code": "044", "name": "Access Bank Plc"},
+    {"code": "023", "name": "Citibank Nigeria Ltd"},
+    {"code": "050", "name": "Ecobank Nigeria Plc"},
+    {"code": "070", "name": "Fidelity Bank Plc"},
+    {"code": "011", "name": "First Bank Nigeria Ltd"},
+    {"code": "214", "name": "First City Monument Bank Plc"},
+    {"code": "00103", "name": "Globus Bank Ltd"},
+    {"code": "058", "name": "Guaranty Trust Bank Plc"},
+    {"code": "082", "name": "Keystone Bank Ltd"},
+    {"code": "50515", "name": "Moniepoint Microfinance Bank"},
+    {"code": "107", "name": "Optimus Bank"},
+    {"code": "104", "name": "Parallex Bank Ltd"},
+    {"code": "076", "name": "Polaris Bank Plc"},
+    {"code": "105", "name": "Premium Trust Bank"},
+    {"code": "101", "name": "Providus Bank Ltd"},
+    {"code": "106", "name": "Signature Bank Ltd"},
+    {"code": "221", "name": "Stanbic IBTC Bank Plc"},
+    {"code": "068", "name": "Standard Chartered Bank Nigeria Ltd"},
+    {"code": "232", "name": "Sterling Bank Plc"},
+    {"code": "100", "name": "SunTrust Bank Nigeria Ltd"},
+    {"code": "102", "name": "Titan Trust Bank Ltd"},
+    {"code": "032", "name": "Union Bank of Nigeria Plc"},
+    {"code": "033", "name": "United Bank For Africa Plc"},
+    {"code": "215", "name": "Unity Bank Plc"},
+    {"code": "035", "name": "Wema Bank Plc"},
+    {"code": "057", "name": "Zenith Bank Plc"},
+]
+
 
 def _kobo_to_naira(amount_kobo: int) -> float:
     """Monnify amounts are in naira (major units). Convert without float drift."""
@@ -279,6 +314,9 @@ class MonnifyProvider(PaymentProvider):
             ]
             _banks_cache["banks"] = banks
             return banks
+
+    async def get_direct_debit_banks(self) -> list[dict]:
+        return list(_DIRECT_DEBIT_BANKS)
 
     async def name_enquiry(self, account_number: str, bank_code: str) -> dict:
         body = await self._call(

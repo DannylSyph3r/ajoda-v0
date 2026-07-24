@@ -1,16 +1,21 @@
 """
 Auto-pay bot flow — member-facing direct-debit (recurring contribution) setup.
 
-Reuses the base flow machinery the same way disbursement_flows.py does:
 ConversationFlow.AUTOPAY_ENABLE is a blocking flow (free text routes back into
-it), the bank step uses an interactive list, and Confirm/Cancel are reply
-buttons. A member with an existing mandate never re-enters setup — tapping the
-entry point instead shows their current status with a cancel option.
+it), and Confirm/Cancel are reply buttons. A member with an existing mandate
+never re-enters setup — tapping the entry point instead shows their current
+status with a cancel option.
 
-The account/bank fields are member-supplied, so bank search and name enquiry
-reuse WithdrawalService's thin provider passthroughs (get_banks / verify_recipient)
-rather than duplicating them — those methods have no disbursement-specific logic,
-they're just Monnify Get Banks / Name Enquiry.
+Bank selection is a fixed, numbered list, not a search: Direct Debit only
+works against the ~26 banks Monnify's docs confirm as supported (a small
+subset of the ~100+ banks get_banks() returns for disbursement), so there's
+nothing to search — every eligible bank is shown up front and the member
+replies with its number. That list comes from
+WithdrawalService.get_direct_debit_banks() (a thin passthrough to the
+PaymentProvider boundary), not a hardcoded constant here, so a future gateway
+swap only needs a new provider implementation. Name enquiry still reuses
+WithdrawalService.verify_recipient() — that has no disbursement-specific
+logic, it's just Monnify Name Enquiry.
 """
 import logging
 from uuid import UUID
@@ -25,15 +30,12 @@ from app.repositories.cooperative_repository import CooperativeRepository
 from app.services.mandate_service import MandateService
 from app.services.whatsapp_service import (
     send_cta_url_button,
-    send_list_message,
     send_reply_buttons,
     send_text_message,
 )
 from app.services.withdrawal_service import (
     WithdrawalService,
     _mask_account,
-    match_banks,
-    truncate_bank_row_title,
 )
 
 logger = logging.getLogger("akoweai")
@@ -103,19 +105,19 @@ async def handle_autopay_flow(
             return
         fd["account_number"] = acct
         session.current_step = _BANK
-        await send_text_message(
-            phone, "🔎 Type your bank's name (e.g. Access, GTBank, Opay, Kuda)."
-        )
+        await _prompt_bank_selection(phone, db)
         return
 
     if step == _BANK:
-        row_id = entities.get("row_id", "")
-        if row_id.startswith("bank_"):
-            await _bank_selected(
-                phone, session, fd, coop_id, member, db, row_id.removeprefix("bank_")
+        banks = await WithdrawalService(db).get_direct_debit_banks()
+        choice = text.strip()
+        if not choice.isdigit() or not (1 <= int(choice) <= len(banks)):
+            await send_text_message(
+                phone, f"Please reply with a number from 1 to {len(banks)}."
             )
-        else:
-            await _search_banks(phone, db, text)
+            return
+        bank = banks[int(choice) - 1]
+        await _bank_selected(phone, session, fd, coop_id, member, db, bank["code"])
         return
 
     if step == _CONFIRM:
@@ -203,56 +205,16 @@ async def _show_existing_mandate(phone: str, mandate) -> None:
     )
 
 
-async def _search_banks(phone: str, db: AsyncSession, query: str) -> None:
-    query = query.strip()
-    if len(query) < 2:
-        await send_text_message(phone, "Type at least 2 letters of your bank's name.")
-        return
-    svc = WithdrawalService(db)
-    try:
-        banks = await svc.get_banks()
-    except AppException as exc:
-        await send_text_message(phone, f"⚠️ {exc.message}")
-        return
-    matches = match_banks(banks, query)
-    if not matches:
-        await send_text_message(
-            phone, f"No bank matches '{query}'. Try a different spelling."
-        )
-        return
-    shown = matches[:10]
-
-    # 3 or fewer matches (the common case once acronyms resolve to one bank)
-    # fit as reply buttons — a single tap, no extra "Choose Bank" step.
-    if len(shown) <= 3:
-        await send_reply_buttons(
-            phone,
-            "Select your bank:",
-            [
-                {
-                    "id": f"bank_{b['code']}",
-                    "title": truncate_bank_row_title(b["name"] or b["code"], limit=20),
-                }
-                for b in shown
-            ],
-        )
-        return
-
-    rows = [
-        {"id": f"bank_{b['code']}", "title": truncate_bank_row_title(b["name"] or b["code"])}
-        for b in shown
-    ]
-    body = (
-        "Select your bank:"
-        if len(matches) <= 10
-        else "Showing the first 10 matches — type more of the name to narrow it down."
-    )
-    await send_list_message(
-        phone,
-        header="Select Bank",
-        body=body,
-        button_text="Choose Bank",
-        sections=[{"title": "Banks", "rows": rows}],
+async def _prompt_bank_selection(phone: str, db: AsyncSession) -> None:
+    """
+    Direct Debit only works against a fixed, small set of banks — not the full
+    disbursement bank universe — so there's nothing to search. Show all of them
+    numbered and let the member reply with a digit.
+    """
+    banks = await WithdrawalService(db).get_direct_debit_banks()
+    listing = "\n".join(f"{i}. {b['name']}" for i, b in enumerate(banks, start=1))
+    await send_text_message(
+        phone, f"🔎 Select your bank — reply with its number:\n\n{listing}"
     )
 
 
@@ -266,20 +228,22 @@ async def _bank_selected(
     bank_code: str,
 ) -> None:
     svc = WithdrawalService(db)
-    banks = await svc.get_banks()
+    banks = await svc.get_direct_debit_banks()
     bank = next((b for b in banks if b["code"] == bank_code), None)
     if not bank:
         await send_text_message(
-            phone, "That bank wasn't recognised. Type your bank's name again."
+            phone, "That bank wasn't recognised. Please try again."
         )
+        await _prompt_bank_selection(phone, db)
         return
 
     try:
         verified = await svc.verify_recipient(fd["account_number"], bank_code)
     except AppException as exc:
         await send_text_message(
-            phone, f"⚠️ {exc.message}\n\nType your bank's name again to retry."
+            phone, f"⚠️ {exc.message}\n\nSelect your bank again to retry."
         )
+        await _prompt_bank_selection(phone, db)
         return
 
     fd["bank_code"] = bank_code

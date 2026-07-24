@@ -276,6 +276,9 @@ class WithdrawalService:
     async def get_banks(self) -> list[dict]:
         return await get_payment_provider().get_banks()
 
+    async def get_direct_debit_banks(self) -> list[dict]:
+        return await get_payment_provider().get_direct_debit_banks()
+
     async def verify_recipient(self, account_number: str, bank_code: str) -> dict:
         """Name Enquiry — returns the verified holder name for a Confirm/Cancel beat."""
         return await get_payment_provider().name_enquiry(account_number, bank_code)

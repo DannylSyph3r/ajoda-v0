@@ -62,6 +62,15 @@ class PaymentProvider(ABC):
         ...
 
     @abstractmethod
+    async def get_direct_debit_banks(self) -> list[dict]:
+        """
+        Return the fixed set of banks this provider supports for Direct Debit
+        mandates — a small subset of get_banks(), not every disbursement-capable
+        bank. Returns [{"code": str, "name": str}, ...].
+        """
+        ...
+
+    @abstractmethod
     async def name_enquiry(self, account_number: str, bank_code: str) -> dict:
         """
         Resolve the true account holder name for an account/bank pair.
