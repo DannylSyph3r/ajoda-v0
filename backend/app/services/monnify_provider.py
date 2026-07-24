@@ -401,3 +401,169 @@ class MonnifyProvider(PaymentProvider):
             "description": rb.get("transactionDescription", ""),
             "raw": rb,
         }
+
+    # ------------------------------------------------------------------ #
+    # Direct Debit (recurring contributions)
+    # ------------------------------------------------------------------ #
+    async def create_mandate(
+        self,
+        *,
+        mandate_reference: str,
+        amount_kobo: int,
+        customer_name: str,
+        customer_phone: str,
+        customer_email: str,
+        customer_address: str,
+        account_number: str,
+        bank_code: str,
+        description: str,
+        start_date,
+        end_date,
+        redirect_url: str,
+    ) -> dict:
+        payload = {
+            "contractCode": self.contract_code,
+            "mandateReference": mandate_reference,
+            "mandateAmount": _kobo_to_naira(amount_kobo),
+            "autoRenew": True,
+            "customerCancellation": True,
+            "customerName": customer_name,
+            "customerPhoneNumber": customer_phone,
+            "customerEmailAddress": customer_email,
+            "customerAddress": customer_address,
+            "customerAccountNumber": account_number,
+            "customerAccountBankCode": bank_code,
+            "mandateDescription": description,
+            "mandateStartDate": start_date.strftime("%Y-%m-%dT%H:%M:%S"),
+            "mandateEndDate": end_date.strftime("%Y-%m-%dT%H:%M:%S"),
+            "redirectUrl": redirect_url,
+        }
+        body = await self._call(
+            "POST",
+            f"{self.base_url}/api/v1/direct-debit/mandate/create",
+            "create mandate",
+            json=payload,
+        )
+        if not body.get("requestSuccessful"):
+            raise BadRequestException(
+                body.get("responseMessage") or "The mandate could not be created."
+            )
+        rb = body.get("responseBody") or {}
+        mandate_code = rb.get("mandateCode")
+        if not mandate_code:
+            raise InternalServerException("The payment provider returned no mandate code")
+        return {
+            "mandate_code": mandate_code,
+            "status": rb.get("mandateStatus", ""),
+            # Best-known field for the customer-facing bank authorization link —
+            # confirm exactly which field this is once sandbox testing runs.
+            "authorization_link": rb.get("redirectUrl", ""),
+            "raw": rb,
+        }
+
+    async def debit_mandate(
+        self,
+        *,
+        mandate_code: str,
+        payment_reference: str,
+        amount_kobo: int,
+        narration: str,
+        customer_email: str,
+    ) -> dict:
+        payload = {
+            "paymentReference": payment_reference,
+            "mandateCode": mandate_code,
+            "debitAmount": _kobo_to_naira(amount_kobo),
+            "narration": narration,
+            "customerEmail": customer_email,
+        }
+        body = await self._call(
+            "POST",
+            f"{self.base_url}/api/v1/direct-debit/mandate/debit",
+            "debit mandate",
+            json=payload,
+        )
+        if not body.get("requestSuccessful"):
+            raise BadRequestException(
+                body.get("responseMessage") or "The debit could not be initiated."
+            )
+        rb = body.get("responseBody") or {}
+        return {"status": rb.get("transactionStatus", ""), "raw": rb}
+
+    async def get_debit_status(self, payment_reference: str) -> dict:
+        body = await self._call(
+            "GET",
+            f"{self.base_url}/api/v1/direct-debit/mandate/debit-status",
+            "check debit status",
+            params={"paymentReference": payment_reference},
+        )
+        if not body.get("requestSuccessful"):
+            raise InternalServerException("Could not fetch the debit status")
+        rb = body.get("responseBody") or {}
+        return {"status": rb.get("transactionStatus", ""), "raw": rb}
+
+    async def cancel_mandate(self, mandate_code: str) -> dict:
+        body = await self._call(
+            "PATCH",
+            f"{self.base_url}/api/v1/direct-debit/mandate/cancel-mandate/{mandate_code}",
+            "cancel mandate",
+        )
+        if not body.get("requestSuccessful"):
+            raise BadRequestException(
+                body.get("responseMessage") or "The mandate could not be cancelled."
+            )
+        rb = body.get("responseBody") or {}
+        return {"status": rb.get("mandateStatus", ""), "raw": rb}
+
+    # ------------------------------------------------------------------ #
+    # Refunds
+    # ------------------------------------------------------------------ #
+    async def initiate_refund(
+        self,
+        *,
+        transaction_reference: str,
+        refund_reference: str,
+        amount_kobo: int,
+        reason: str,
+        customer_note: str,
+    ) -> dict:
+        payload = {
+            "transactionReference": transaction_reference,
+            "refundReference": refund_reference,
+            "refundAmount": _kobo_to_naira(amount_kobo),
+            "refundReason": reason[:64],
+            "customerNote": customer_note[:16],
+        }
+        body = await self._call(
+            "POST",
+            f"{self.base_url}/api/v1/refunds/initiate-refund",
+            "initiate refund",
+            json=payload,
+        )
+        if not body.get("requestSuccessful"):
+            raise BadRequestException(
+                body.get("responseMessage") or "The refund could not be initiated."
+            )
+        rb = body.get("responseBody") or {}
+        return {
+            "status": rb.get("refundStatus", ""),
+            "refund_type": rb.get("refundType", ""),
+            "monnify_reference": rb.get("reference", ""),
+            "raw": rb,
+        }
+
+    async def get_refund_status(self, refund_reference: str) -> dict:
+        body = await self._call(
+            "GET",
+            f"{self.base_url}/api/v1/refunds/{refund_reference}",
+            "check refund status",
+        )
+        if not body.get("requestSuccessful"):
+            raise InternalServerException("Could not fetch the refund status")
+        rb = body.get("responseBody") or {}
+        return {
+            "status": rb.get("refundStatus", ""),
+            "refund_type": rb.get("refundType", ""),
+            "monnify_reference": rb.get("reference", ""),
+            "raw": rb,
+        }

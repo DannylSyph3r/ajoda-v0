@@ -11,9 +11,11 @@ from app.core.dependencies import (
     require_coop_exco,
     require_step_up,
 )
-from app.core.enums import RiskLevel, StepUpAction
+from app.core.enums import RiskLevel, StepUpAction, bucket_mandate_status
+from app.core.exceptions import NotFoundException
 from app.core.responses import ApiResponse
 from app.models.member import Member
+from app.repositories.contribution_refund_repository import ContributionRefundRepository
 from app.repositories.cooperative_repository import CooperativeRepository
 from app.prompts.financial_summary import COOP_STATUS_INSIGHT_PROMPT
 from app.repositories.period_repository import PeriodRepository
@@ -32,12 +34,16 @@ from app.schemas.cooperative import (
     JoinCodesResponse,
     AuthorizeDisbursementRequest,
     BankItem,
+    DirectDebitMandateResponse,
     DisbursementResponse,
     InitiateDisbursementRequest,
+    InitiateRefundRequest,
     MemberListItem,
     PaginatedWithdrawals,
     PayablePeriodItem,
     PayablePeriodsResponse,
+    RefundResponse,
+    SetupDirectDebitRequest,
     UpdateSettingsRequest,
     VerifyRecipientRequest,
     VerifyRecipientResponse,
@@ -52,6 +58,8 @@ from app.schemas.cooperative import (
 from app.services.cooperative_service import CooperativeService
 from app.services.gemini_service import GeminiProClient
 from app.services.join_code_service import JoinCodeService
+from app.services.mandate_service import MandateService
+from app.services.payment_service import PaymentService
 from app.services.period_service import PeriodService
 from app.services.withdrawal_service import WithdrawalService, _mask_account
 
@@ -148,6 +156,7 @@ async def get_members(
                 total_contributed=row["total_contributed"],
                 periods_paid=row["periods_paid"],
                 last_paid_at=row["last_paid_at"],
+                autopay_status=bucket_mandate_status(row.get("mandate_status")),
             )
         )
 
@@ -376,6 +385,115 @@ async def list_withdrawals(
         ),
         message="OK",
     )
+
+
+def _mandate_response(m) -> DirectDebitMandateResponse:
+    return DirectDebitMandateResponse(
+        mandate_id=m.id,
+        status=m.status,
+        authorization_link=m.authorization_link,
+        mandate_amount_kobo=m.mandate_amount_kobo,
+        created_at=m.created_at,
+    )
+
+
+@router.post("/{coop_id}/direct-debit/setup", status_code=201)
+async def setup_direct_debit(
+    coop_id: UUID,
+    body: SetupDirectDebitRequest,
+    current_member: Member = Depends(get_current_member),
+    _membership=Depends(get_coop_membership),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    """Member-initiated — any member of the cooperative, not exco-only. An exco
+    can never set up auto-pay on another member's behalf; final consent happens
+    on the member's own bank authorization link regardless, but initiation is
+    scoped to the member's own session."""
+    mandate = await MandateService(db).setup(
+        member=current_member,
+        coop_id=coop_id,
+        account_number=body.account_number,
+        bank_code=body.bank_code,
+    )
+    return ApiResponse.success(
+        data=_mandate_response(mandate), message="Mandate created", status_code=201
+    )
+
+
+@router.get("/{coop_id}/direct-debit/status")
+async def get_direct_debit_status(
+    coop_id: UUID,
+    current_member: Member = Depends(get_current_member),
+    _membership=Depends(get_coop_membership),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    mandate = await MandateService(db).get_active_mandate(current_member.id, coop_id)
+    return ApiResponse.success(
+        data=_mandate_response(mandate) if mandate else None, message="OK"
+    )
+
+
+@router.post("/{coop_id}/direct-debit/cancel")
+async def cancel_direct_debit(
+    coop_id: UUID,
+    current_member: Member = Depends(get_current_member),
+    _membership=Depends(get_coop_membership),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    service = MandateService(db)
+    mandate = await service.get_active_mandate(current_member.id, coop_id)
+    if not mandate:
+        raise NotFoundException(
+            "No active auto-pay mandate found for this cooperative."
+        )
+    await service.cancel(mandate, "Cancelled by member")
+    return ApiResponse.success(data=None, message="Auto-pay cancelled")
+
+
+def _refund_response(r) -> RefundResponse:
+    return RefundResponse(
+        refund_id=r.id,
+        contribution_id=r.contribution_id,
+        status=r.status,
+        refund_type=r.refund_type,
+        amount=r.amount,
+        created_at=r.created_at,
+    )
+
+
+@router.post("/{coop_id}/contributions/{contribution_id}/refund", status_code=201)
+async def refund_contribution(
+    coop_id: UUID,
+    contribution_id: UUID,
+    body: InitiateRefundRequest,
+    current_member: Member = Depends(get_current_member),
+    _exco=Depends(require_coop_exco),
+    _step_up=Depends(require_step_up(StepUpAction.REFUND)),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    """Exco-only, step-up gated — same risk class as a withdrawal: real money
+    leaves the pool to a bank account. Never self-serve by the paying member."""
+    refund = await PaymentService(db).refund_contribution(
+        coop_id=coop_id,
+        contribution_id=contribution_id,
+        amount_kobo=body.amount_kobo,
+        reason=body.reason,
+        requested_by_member_id=current_member.id,
+    )
+    return ApiResponse.success(
+        data=_refund_response(refund), message="Refund initiated", status_code=201
+    )
+
+
+@router.get("/{coop_id}/contributions/refunds/{refund_id}")
+async def get_refund_status(
+    coop_id: UUID,
+    refund_id: UUID,
+    _exco=Depends(require_coop_exco),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    refund = await PaymentService(db).get_refund_status(coop_id, refund_id)
+    return ApiResponse.success(data=_refund_response(refund), message="OK")
 
 
 @router.get("/{coop_id}/insights")

@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from sqlalchemy import cast, select
@@ -19,6 +20,8 @@ from app.services.schedule_service import (
     compute_period_end_date,
     format_period_label,
 )
+
+logger = logging.getLogger("akoweai")
 
 
 class PeriodService:
@@ -89,7 +92,44 @@ class PeriodService:
 
         await self.db.commit()
 
+        await self._attempt_scheduled_debits(period.cooperative_id, next_period.id)
+
         return next_period, member_ids
+
+    async def _attempt_scheduled_debits(self, coop_id: UUID, period_id: UUID) -> None:
+        """
+        Auto-pay: for every member with an active direct-debit mandate on this
+        coop, attempt a debit for their newly-opened contribution. Additive only
+        — a member with no mandate, or a debit that fails to even initiate, keeps
+        the existing unpaid-and-reminded manual pay-link path untouched. Best-
+        effort: one member's failure never blocks another's.
+        """
+        from app.repositories.mandate_repository import MandateRepository
+        from app.services.mandate_service import MandateService
+
+        mandate_repo = MandateRepository(self.db)
+        active_mandates = await mandate_repo.get_active_mandates_for_coop(coop_id)
+        if not active_mandates:
+            return
+
+        mandate_svc = MandateService(self.db)
+        for mandate in active_mandates:
+            result = await self.db.execute(
+                select(Contribution).where(
+                    Contribution.member_id == mandate.member_id,
+                    Contribution.period_id == period_id,
+                    Contribution.status == "unpaid",
+                )
+            )
+            contribution = result.scalar_one_or_none()
+            if contribution is None:
+                continue
+            try:
+                await mandate_svc.debit_for_contribution(mandate, contribution)
+            except Exception:
+                logger.exception(
+                    "Scheduled auto-pay debit failed for mandate %s", mandate.id
+                )
 
     async def close_overdue_periods(self) -> dict:
         """

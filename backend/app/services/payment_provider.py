@@ -110,6 +110,84 @@ class PaymentProvider(ABC):
         """
         ...
 
+    # ------------------------------------------------------------------ #
+    # Direct Debit (recurring contributions)
+    # ------------------------------------------------------------------ #
+    @abstractmethod
+    async def create_mandate(
+        self,
+        *,
+        mandate_reference: str,
+        amount_kobo: int,
+        customer_name: str,
+        customer_phone: str,
+        customer_email: str,
+        customer_address: str,
+        account_number: str,
+        bank_code: str,
+        description: str,
+        start_date,
+        end_date,
+        redirect_url: str,
+    ) -> dict:
+        """
+        Create a direct-debit mandate. Returns a normalized dict:
+            {"mandate_code": str, "status": str, "authorization_link": str, "raw": dict}
+        Raises on provider failure.
+        """
+        ...
+
+    @abstractmethod
+    async def debit_mandate(
+        self,
+        *,
+        mandate_code: str,
+        payment_reference: str,
+        amount_kobo: int,
+        narration: str,
+        customer_email: str,
+    ) -> dict:
+        """
+        Attempt a single debit against an activated mandate. Resolves async —
+        returns {"status": str, "raw": dict} where status is typically PENDING;
+        call get_debit_status to resolve the outcome.
+        """
+        ...
+
+    @abstractmethod
+    async def get_debit_status(self, payment_reference: str) -> dict:
+        """Poll a debit's outcome. Returns {"status": str, "raw": dict}."""
+        ...
+
+    @abstractmethod
+    async def cancel_mandate(self, mandate_code: str) -> dict:
+        """Request cancellation of a mandate. Returns {"status": str, "raw": dict}."""
+        ...
+
+    # ------------------------------------------------------------------ #
+    # Refunds
+    # ------------------------------------------------------------------ #
+    @abstractmethod
+    async def initiate_refund(
+        self,
+        *,
+        transaction_reference: str,
+        refund_reference: str,
+        amount_kobo: int,
+        reason: str,
+        customer_note: str,
+    ) -> dict:
+        """
+        Initiate a refund (full or partial) against a settled collection.
+        Returns {"status": str, "refund_type": str, "monnify_reference": str, "raw": dict}.
+        """
+        ...
+
+    @abstractmethod
+    async def get_refund_status(self, refund_reference: str) -> dict:
+        """Poll a refund's outcome. Returns {"status": str, "raw": dict}."""
+        ...
+
 
 # In-process singleton factory. Mirrors the base's single-worker singleton
 # pattern (e.g. intent_service._gemini_flash). Import lazily to avoid a cycle.

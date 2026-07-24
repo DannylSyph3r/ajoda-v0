@@ -12,3 +12,5 @@ from app.models.reminder_log import ReminderLog  # noqa: F401
 from app.models.conversation_session import ConversationSession  # noqa: F401
 from app.models.join_code import JoinCode  # noqa: F401
 from app.models.pool import Pool  # noqa: F401
+from app.models.direct_debit_mandate import DirectDebitMandate  # noqa: F401
+from app.models.contribution_refund import ContributionRefund  # noqa: F401

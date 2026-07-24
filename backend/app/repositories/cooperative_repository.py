@@ -134,6 +134,14 @@ class CooperativeRepository:
                 JOIN last_3_periods p ON c.period_id = p.id
                 WHERE c.cooperative_id = :coop_id
                 GROUP BY c.member_id
+            ),
+            latest_mandate AS (
+                -- One row per member: their most recently created mandate for
+                -- this coop. Bounded — a coop's own mandates are a small set.
+                SELECT DISTINCT ON (member_id) member_id, status
+                FROM direct_debit_mandates
+                WHERE cooperative_id = :coop_id
+                ORDER BY member_id, created_at DESC
             )
             SELECT
                 m.id           AS member_id,
@@ -143,11 +151,13 @@ class CooperativeRepository:
                 COALESCE(ms.total_contributed, 0) AS total_contributed,
                 COALESCE(ms.periods_paid, 0)      AS periods_paid,
                 ms.last_paid_at,
-                COALESCE(mr.late_count, 0)        AS late_count
+                COALESCE(mr.late_count, 0)        AS late_count,
+                lm.status                          AS mandate_status
             FROM coop_members cm
             JOIN members m ON cm.member_id = m.id
             LEFT JOIN member_stats ms ON cm.member_id = ms.member_id
             LEFT JOIN member_risk  mr ON cm.member_id = mr.member_id
+            LEFT JOIN latest_mandate lm ON cm.member_id = lm.member_id
             WHERE cm.cooperative_id = :coop_id
             ORDER BY cm.joined_at
         """)
@@ -280,7 +290,9 @@ class CooperativeRepository:
     ) -> list[dict]:
         """
         Snapshot of each member's payment status for a specific period.
-        Returns: member_id, full_name, amount, status.
+        Returns: member_id, full_name, amount, status, contribution_id.
+        contribution_id is null only when the member joined after this period's
+        contribution rows were created (no row was backfilled for them).
         Paid members appear first, then unpaid alphabetically.
         """
         stmt = text("""
@@ -288,7 +300,8 @@ class CooperativeRepository:
                 m.id     AS member_id,
                 m.full_name,
                 COALESCE(c.amount, 0) AS amount,
-                COALESCE(c.status, 'unpaid') AS status
+                COALESCE(c.status, 'unpaid') AS status,
+                c.id AS contribution_id
             FROM coop_members cm
             JOIN members m ON cm.member_id = m.id
             LEFT JOIN contributions c

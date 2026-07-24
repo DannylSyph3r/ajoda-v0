@@ -105,6 +105,7 @@ class MemberListItem(BaseModel):
     total_contributed: int
     periods_paid: int
     last_paid_at: datetime | None
+    autopay_status: str | None = None  # 'active' | 'pending' | 'needs_attention' | None
 
 
 class JoinCodeItem(BaseModel):
@@ -239,7 +240,8 @@ class PeriodStatusItem(BaseModel):
     member_id: UUID
     full_name: str
     amount: int
-    status: str  # 'paid' | 'unpaid'
+    status: str  # 'paid' | 'unpaid' | 'refunded'
+    contribution_id: UUID | None = None
 
 
 class BroadcastRequest(BaseModel):
@@ -248,3 +250,34 @@ class BroadcastRequest(BaseModel):
 
 class BroadcastResponse(BaseModel):
     sent_to: int
+
+
+# --- Direct Debit (auto-pay) ---
+
+class SetupDirectDebitRequest(BaseModel):
+    account_number: str = Field(..., min_length=10, max_length=10)
+    bank_code: str = Field(..., min_length=3, max_length=10)
+
+
+class DirectDebitMandateResponse(BaseModel):
+    mandate_id: UUID
+    status: str
+    authorization_link: str | None
+    mandate_amount_kobo: int
+    created_at: datetime
+
+
+# --- Refunds ---
+
+class InitiateRefundRequest(BaseModel):
+    amount_kobo: int = Field(..., gt=0)
+    reason: str = Field(..., min_length=3, max_length=500)
+
+
+class RefundResponse(BaseModel):
+    refund_id: UUID
+    contribution_id: UUID
+    status: str
+    refund_type: str
+    amount: int
+    created_at: datetime

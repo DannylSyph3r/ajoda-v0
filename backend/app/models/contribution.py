@@ -12,7 +12,9 @@ class Contribution(Base, TimestampMixin):
     __tablename__ = "contributions"
     __table_args__ = (
         UniqueConstraint("member_id", "period_id"),
-        CheckConstraint("status IN ('unpaid','paid')", name="ck_contributions_status"),
+        CheckConstraint(
+            "status IN ('unpaid','paid','refunded')", name="ck_contributions_status"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -34,4 +36,12 @@ class Contribution(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="unpaid")
     paid_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # The Monnify reference that settled this contribution — a hosted-checkout
+    # PendingTransaction.reference (may cover several periods in one payment; a
+    # refund against it can still be partial for just this contribution's amount)
+    # or a direct-debit payment_reference. Set only when status becomes 'paid';
+    # required for a refund to be initiated against this row.
+    settlement_reference: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
     )

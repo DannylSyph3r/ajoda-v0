@@ -116,6 +116,16 @@ class CooperativeService:
         if not coop:
             raise NotFoundException("Cooperative not found")
 
+        # Captured before any write, for the auto-pay cascade below — a mandate's
+        # authorised amount is fixed on Monnify's side at creation, so either of
+        # these actually changing invalidates every outstanding mandate for this
+        # coop regardless of which other settings also changed in the same call.
+        amount_changing = (
+            contribution_amount_kobo is not None
+            and contribution_amount_kobo != coop.contribution_amount
+        )
+        frequency_changing = False
+
         # A new schedule version is only warranted when the schedule itself changes
         if frequency is not None or due_day_offset is not None:
             current_schedule = await self.schedule_service.get_active_schedule(coop_id)
@@ -132,6 +142,7 @@ class CooperativeService:
                         "Cannot change frequency — a member has already paid "
                         "for a future period under the current schedule."
                     )
+                frequency_changing = True
 
             effective_frequency = frequency or Frequency(current_schedule.frequency)
             effective_offset = (
@@ -153,6 +164,25 @@ class CooperativeService:
         )
 
         await self.db.commit()
+
+        # Auto-pay cascade — runs after the settings change has actually landed,
+        # never before, and never blocks or rolls back the change itself.
+        if amount_changing or frequency_changing:
+            from app.services.mandate_service import MandateService
+
+            reason = (
+                "Contribution amount changed"
+                if amount_changing and not frequency_changing
+                else "Contribution frequency changed"
+                if frequency_changing and not amount_changing
+                else "Contribution amount and frequency changed"
+            )
+            try:
+                await MandateService(self.db).cancel_all_for_coop(coop_id, reason)
+            except Exception:
+                logger.exception(
+                    "Auto-pay cascade failed for coop %s after a settings change", coop_id
+                )
 
         return await self.get_cooperative(coop_id)
 

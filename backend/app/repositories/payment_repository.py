@@ -105,13 +105,19 @@ class PaymentRepository:
         )
 
     async def mark_contributions_paid(
-        self, period_ids: list[UUID], member_id: UUID
+        self,
+        period_ids: list[UUID],
+        member_id: UUID,
+        settlement_reference: str | None = None,
     ) -> None:
         """
         Mark contribution records for the given periods as paid.
         If a record does not yet exist for a period (e.g. the member joined before
         the period was lazily created, or a future period payment), insert it as
         paid directly so the balance and history queries reflect the payment.
+        `settlement_reference` (the Monnify reference that paid these periods,
+        possibly in one transaction covering several) is stored on each row so a
+        later refund can be initiated against it.
         """
         now = datetime.now(timezone.utc)
 
@@ -124,7 +130,9 @@ class PaymentRepository:
                     Contribution.period_id.in_(period_ids),
                 )
             )
-            .values(status="paid", paid_at=now)
+            .values(
+                status="paid", paid_at=now, settlement_reference=settlement_reference
+            )
         )
 
         # Find which period_ids had no contribution record
@@ -158,6 +166,7 @@ class PaymentRepository:
                     amount=coop.contribution_amount,
                     status="paid",
                     paid_at=now,
+                    settlement_reference=settlement_reference,
                 )
             )
 
@@ -170,3 +179,28 @@ class PaymentRepository:
             .where(Cooperative.id == coop_id)
             .values(pool_balance=Cooperative.pool_balance + amount)
         )
+
+    async def settle_single_contribution_if_unpaid(
+        self, contribution_id: UUID, settlement_reference: str | None = None
+    ) -> bool:
+        """
+        Atomic unpaid -> paid transition on a single contribution row (the
+        direct-debit auto-charge path — settle_if_pending's counterpart for a
+        PendingTransaction). Returns True only if THIS call performed the
+        transition, so a duplicate debit-status poll cannot double-credit.
+        """
+        now = datetime.now(timezone.utc)
+        result = await self.db.execute(
+            update(Contribution)
+            .where(
+                and_(
+                    Contribution.id == contribution_id,
+                    Contribution.status == "unpaid",
+                )
+            )
+            .values(
+                status="paid", paid_at=now, settlement_reference=settlement_reference
+            )
+            .returning(Contribution.id)
+        )
+        return result.scalar_one_or_none() is not None
