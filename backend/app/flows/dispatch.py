@@ -3,7 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import ConversationFlow, Intent, Role
+from app.core.enums import ConversationFlow, Intent, Role, bucket_mandate_status
 from app.models.conversation_session import ConversationSession
 from app.models.member import Member
 from app.repositories.cooperative_repository import CooperativeRepository
@@ -15,18 +15,50 @@ from app.services.whatsapp_service import (
 
 logger = logging.getLogger("akoweai")
 
+_AUTOPAY_ROW_LABEL = {
+    # WhatsApp list row titles are capped at 24 characters (Meta) — every value
+    # here must stay under that.
+    "active": "🔁 Autopay: Active",
+    "pending": "🔁 Autopay: Pending",
+    "needs_attention": "🔁 Autopay: Retry",
+    None: "🔁 Enable Autopay",
+}
 
-async def send_member_main_menu(phone: str, multi_coop: bool = False) -> None:
-    buttons = [
+
+async def send_member_main_menu(
+    phone: str,
+    db: AsyncSession,
+    member_id: UUID,
+    coop_id: UUID | None,
+    multi_coop: bool = False,
+) -> None:
+    """
+    A list message, not reply-buttons — the member menu needs a variable number
+    of rows (the auto-pay row's label depends on mandate state, plus an optional
+    coop switcher), and reply-buttons is hard-capped at 3 with no headroom left
+    once "Switch Coop" is present.
+    """
+    autopay_bucket = None
+    if coop_id is not None:
+        from app.repositories.mandate_repository import MandateRepository
+
+        mandate = await MandateRepository(db).get_active_mandate(member_id, coop_id)
+        autopay_bucket = bucket_mandate_status(mandate.status if mandate else None)
+
+    rows = [
         {"id": "pay_now", "title": "💰 Pay"},
         {"id": "my_balance", "title": "📊 My Balance"},
+        {"id": "autopay", "title": _AUTOPAY_ROW_LABEL[autopay_bucket]},
     ]
     if multi_coop:
-        buttons.append({"id": "show_switcher", "title": "🔄 Switch Coop"})
-    await send_reply_buttons(
+        rows.append({"id": "show_switcher", "title": "🔄 Switch Coop"})
+
+    await send_list_message(
         phone,
-        "Here's what I can help you with 👇",
-        buttons,
+        header="Ajoda",
+        body="Here's what I can help you with 👇",
+        button_text="View Options",
+        sections=[{"title": "Actions", "rows": rows}],
     )
 
 
@@ -125,6 +157,10 @@ async def dispatch_intent(
         handle_disbursement_flow,
         handle_disbursement_history,
     )
+    from app.flows.autopay_flows import (
+        handle_autopay_cancel_flow,
+        handle_autopay_flow,
+    )
 
     if member is None:
         if intent == Intent.REGISTER or session.current_flow == "REGISTER":
@@ -202,7 +238,9 @@ async def dispatch_intent(
                 multi_coop=len(coops) > 1,
             )
         else:
-            await send_member_main_menu(phone, multi_coop=len(coops) > 1)
+            await send_member_main_menu(
+                phone, db, member.id, new_coop_id, multi_coop=len(coops) > 1
+            )
         return
 
     coop_id = session.active_cooperative_id
@@ -231,7 +269,9 @@ async def dispatch_intent(
                 multi_coop=len(coops) > 1,
             )
         else:
-            await send_member_main_menu(phone, multi_coop=len(coops) > 1)
+            await send_member_main_menu(
+                phone, db, member.id, coop_id, multi_coop=len(coops) > 1
+            )
 
     elif intent == Intent.PAY:
         row_id = entities.get("row_id")
@@ -336,6 +376,16 @@ async def dispatch_intent(
         else:
             await _permission_denied(phone)
 
+    elif (
+        intent == Intent.AUTOPAY_ENABLE
+        or session.current_flow == ConversationFlow.AUTOPAY_ENABLE.value
+    ) and intent != Intent.CANCEL:
+        # Member-facing — available to any member, not exco-gated.
+        await handle_autopay_flow(phone, session, coop_id, member, db, intent, entities)
+
+    elif intent in (Intent.AUTOPAY_CANCEL, Intent.AUTOPAY_CONFIRM_CANCEL):
+        await handle_autopay_cancel_flow(phone, coop_id, member, db, intent)
+
     elif intent == Intent.DISBURSEMENT_HISTORY:
         if is_exco:
             await handle_disbursement_history(phone, coop_id, db)
@@ -354,7 +404,9 @@ async def dispatch_intent(
                 multi_coop=len(coops) > 1,
             )
         else:
-            await send_member_main_menu(phone, multi_coop=len(coops) > 1)
+            await send_member_main_menu(
+                phone, db, member.id, coop_id, multi_coop=len(coops) > 1
+            )
 
     elif intent == Intent.GREETING:
         await send_text_message(
@@ -368,7 +420,9 @@ async def dispatch_intent(
                 multi_coop=len(coops) > 1,
             )
         else:
-            await send_member_main_menu(phone, multi_coop=len(coops) > 1)
+            await send_member_main_menu(
+                phone, db, member.id, coop_id, multi_coop=len(coops) > 1
+            )
 
     elif intent == Intent.SHOW_MENU:
         if is_exco:
@@ -378,7 +432,9 @@ async def dispatch_intent(
                 multi_coop=len(coops) > 1,
             )
         else:
-            await send_member_main_menu(phone, multi_coop=len(coops) > 1)
+            await send_member_main_menu(
+                phone, db, member.id, coop_id, multi_coop=len(coops) > 1
+            )
 
     elif intent == Intent.SHOW_SWITCHER:
         session.current_flow = None
@@ -395,7 +451,9 @@ async def dispatch_intent(
                     multi_coop=False,
                 )
             else:
-                await send_member_main_menu(phone, multi_coop=False)
+                await send_member_main_menu(
+                    phone, db, member.id, coop_id, multi_coop=False
+                )
 
     elif intent == Intent.EXPIRED_SELECTION:
         await send_text_message(

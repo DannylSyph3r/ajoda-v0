@@ -33,6 +33,10 @@ BUTTON_INTENT_MAP: dict[str, Intent] = {
     "confirm_disburse": Intent.CONFIRM_DISBURSE,
     "disburse_resend_otp": Intent.DISBURSE_RESEND_OTP,
     "disbursement_history": Intent.DISBURSEMENT_HISTORY,
+    "autopay": Intent.AUTOPAY_ENABLE,
+    "autopay_enable": Intent.AUTOPAY_ENABLE,
+    "autopay_cancel": Intent.AUTOPAY_CANCEL,
+    "autopay_confirm_cancel": Intent.AUTOPAY_CONFIRM_CANCEL,
 }
 
 _BLOCKING_FLOWS = {
@@ -40,6 +44,7 @@ _BLOCKING_FLOWS = {
     ConversationFlow.BROADCAST.value,
     ConversationFlow.MEMBER_LOOKUP.value,
     ConversationFlow.DISBURSE.value,
+    ConversationFlow.AUTOPAY_ENABLE.value,
 }
 
 _gemini_flash: GeminiFlashClient | None = None

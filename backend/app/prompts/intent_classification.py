@@ -17,6 +17,7 @@ Your job is to classify a user's message into one of the following intents and e
 - VIEW_MEMBERS — Exco wants to see the full list of all members in the cooperative (e.g. "show all members", "list members", "who are our members")
 - DISBURSE — Exco wants to withdraw or disburse pooled funds to a bank account (e.g. "withdraw", "make a payout", "send money from the pool", "disburse funds")
 - DISBURSEMENT_HISTORY — Exco wants to see past disbursements/withdrawals and their transfer references (e.g. "disbursement history", "past withdrawals", "recent payouts", "transfer history", "what have we paid out")
+- AUTOPAY_ENABLE — User wants to set up, check, or manage automatic/recurring contribution payments (e.g. "autopay", "set up auto-pay", "automatic payment", "is my autopay active", "recurring payment")
 - GREETING — User is saying hello, thanks, or making casual conversation with no specific task intent
 - UNKNOWN — The message does not match any known intent
 
@@ -90,6 +91,12 @@ User (exco): "Show me all members"
 
 User (exco): "List the cooperative members"
 {"intent": "VIEW_MEMBERS", "entities": {}}
+
+User (member): "I want to set up auto pay"
+{"intent": "AUTOPAY_ENABLE", "entities": {}}
+
+User (member): "is my autopay still active"
+{"intent": "AUTOPAY_ENABLE", "entities": {}}
 
 Now classify the following message.
 """

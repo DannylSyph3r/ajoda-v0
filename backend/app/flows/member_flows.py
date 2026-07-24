@@ -134,7 +134,9 @@ async def _complete_registration(
         f"Here's what you can do 👇",
     )
     from app.flows.dispatch import send_member_main_menu
-    await send_member_main_menu(phone)
+    await send_member_main_menu(
+        phone, db, result["member_id"], result["cooperative_id"]
+    )
 
 
 async def try_start_register_with_code(
@@ -211,7 +213,9 @@ async def _register_whatsapp_member(
         )
         await db.flush()
 
-    return await join_svc.join_cooperative(join_code, member.id)
+    result = await join_svc.join_cooperative(join_code, member.id)
+    result["member_id"] = member.id
+    return result
 
 
 async def handle_pay_intent(
