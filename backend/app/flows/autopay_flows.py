@@ -29,7 +29,11 @@ from app.services.whatsapp_service import (
     send_reply_buttons,
     send_text_message,
 )
-from app.services.withdrawal_service import WithdrawalService
+from app.services.withdrawal_service import (
+    WithdrawalService,
+    match_banks,
+    truncate_bank_row_title,
+)
 
 logger = logging.getLogger("akoweai")
 
@@ -209,7 +213,7 @@ async def _search_banks(phone: str, db: AsyncSession, query: str) -> None:
     except AppException as exc:
         await send_text_message(phone, f"⚠️ {exc.message}")
         return
-    matches = [b for b in banks if query.lower() in (b.get("name") or "").lower()]
+    matches = match_banks(banks, query)
     if not matches:
         await send_text_message(
             phone, f"No bank matches '{query}'. Try a different spelling."
@@ -217,7 +221,7 @@ async def _search_banks(phone: str, db: AsyncSession, query: str) -> None:
         return
     shown = matches[:10]
     rows = [
-        {"id": f"bank_{b['code']}", "title": (b["name"] or b["code"])[:24]}
+        {"id": f"bank_{b['code']}", "title": truncate_bank_row_title(b["name"] or b["code"])}
         for b in shown
     ]
     body = (

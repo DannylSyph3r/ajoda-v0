@@ -52,6 +52,63 @@ def _mask_account(account_number: str | None) -> str:
     return "••••" + account_number[-4:]
 
 
+# Common Nigerian bank acronyms/short names that never literally appear inside
+# Monnify's full legal name (e.g. "uba" is not a substring of "United Bank For
+# Africa Plc") — plain substring matching misses exactly the names people
+# actually type. Not exhaustive; extend as real gaps surface.
+BANK_NAME_ALIASES: dict[str, str] = {
+    "uba": "united bank for africa",
+    "gtb": "guaranty trust",
+    "gtbank": "guaranty trust",
+    "fcmb": "first city monument",
+    "fbn": "first bank",
+    "firstbank": "first bank",
+    "ubn": "union bank",
+    "stanbic": "stanbic ibtc",
+    "sterling": "sterling bank",
+    "polaris": "polaris bank",
+    "keystone": "keystone bank",
+    "unity": "unity bank",
+    "wema": "wema bank",
+    "fidelity": "fidelity bank",
+    "heritage": "heritage bank",
+    "titan": "titan trust",
+    "providus": "providus bank",
+    "jaiz": "jaiz bank",
+    "suntrust": "suntrust bank",
+    "globus": "globus bank",
+}
+
+
+def match_banks(banks: list[dict], query: str) -> list[dict]:
+    """
+    Substring-match banks by name, expanded with common Nigerian bank acronyms
+    that don't literally appear in Monnify's full legal name. Falls back to a
+    plain substring match against the raw query for anything not aliased.
+    """
+    q = query.strip().lower()
+    fragment = BANK_NAME_ALIASES.get(q, q)
+    return [
+        b
+        for b in banks
+        if fragment in (b.get("name") or "").lower()
+        or q in (b.get("name") or "").lower()
+    ]
+
+
+def truncate_bank_row_title(name: str, limit: int = 24) -> str:
+    """
+    WhatsApp list row titles are hard-capped at 24 characters. A blind slice
+    can cut mid-word (e.g. "United Bank For Africa Plc" -> "United Bank For
+    Africa P") which reads as broken. Cut at the last full word instead and
+    mark the truncation with an ellipsis.
+    """
+    if len(name) <= limit:
+        return name
+    cut = name[: limit - 1].rsplit(" ", 1)[0].strip()
+    return f"{cut}…" if cut else name[: limit - 1]
+
+
 def humanize_failure(description: str, status: str) -> str:
     """
     Map Monnify's raw failure classes onto specific, exco-facing messages so a
