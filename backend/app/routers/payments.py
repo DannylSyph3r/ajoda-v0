@@ -14,6 +14,7 @@ from app.models.member import Member
 from app.repositories.cooperative_repository import CooperativeRepository
 from app.repositories.member_repository import MemberRepository
 from app.repositories.payment_repository import PaymentRepository
+from app.services.mandate_service import MandateService
 from app.services.monnify_provider import verify_monnify_webhook_signature
 from app.services.payment_provider import get_payment_provider
 from app.services.payment_service import PaymentService
@@ -498,6 +499,25 @@ async def _resolve_disbursement(
             logger.exception("Disbursement resolution failed for ref=%s", reference)
 
 
+async def _resolve_mandate_status_update(
+    mandate_code: str, mandate_reference: str, status: str
+) -> None:
+    """Resolve a MANDATE_UPDATE webhook delivery. Runs as a BackgroundTask with
+    its own session; best-effort — a failure here just means the mandate's
+    local status lags until the next scheduled debit attempt surfaces it."""
+    async with AsyncSessionFactory() as db:
+        try:
+            await MandateService(db).resolve_status_update(
+                mandate_code, mandate_reference, status
+            )
+        except Exception:
+            await db.rollback()
+            logger.exception(
+                "Mandate status webhook resolution failed (code=%s ref=%s)",
+                mandate_code, mandate_reference,
+            )
+
+
 # Routes
 @router.get("/initiate/{reference}", include_in_schema=False)
 async def payment_initiate(
@@ -660,6 +680,57 @@ async def disbursement_webhook(
         if reference:
             background_tasks.add_task(
                 _resolve_disbursement, reference, status, monnify_reference, description
+            )
+
+    return Response(status_code=200)
+
+
+@router.post("/direct-debit/webhook")
+async def direct_debit_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> Response:
+    """
+    Monnify mandate-status webhook (MANDATE_UPDATE) — fires when a mandate's
+    status changes on the bank/NIBSS side outside our own cancel() calls (e.g.
+    the customer revokes it directly with their bank, or the bank suspends it).
+    Same `monnify-signature` (HMAC-SHA512) scheme as the other webhooks.
+
+    [!] Monnify's docs describe this event ("Monnify sends a MANDATE_UPDATE
+    webhook whenever the mandate's status changes") but the example eventData
+    payload is rendered client-side on their docs site and wasn't recoverable —
+    the exact field names are unconfirmed. This reads every plausible key
+    defensively and logs the raw payload when nothing matches, so it can be
+    corrected against a real captured sandbox delivery.
+    """
+    raw_body = await request.body()
+    signature = request.headers.get("monnify-signature", "")
+
+    if not verify_monnify_webhook_signature(raw_body, signature):
+        logger.warning("Monnify mandate webhook signature verification failed")
+        return Response(status_code=200)
+
+    try:
+        payload = json.loads(raw_body)
+    except Exception:
+        return Response(status_code=200)
+
+    event_type = payload.get("eventType", "")
+    if event_type == "MANDATE_UPDATE":
+        event_data = payload.get("eventData", {})
+        mandate_code = str(event_data.get("mandateCode", "")).strip()
+        mandate_reference = str(event_data.get("mandateReference", "")).strip()
+        status = str(
+            event_data.get("status") or event_data.get("mandateStatus", "")
+        ).strip().upper()
+
+        if not (mandate_code or mandate_reference):
+            logger.warning("Mandate webhook missing both identifiers: %s", payload)
+        elif not status:
+            logger.warning("Mandate webhook missing a status field: %s", payload)
+        else:
+            background_tasks.add_task(
+                _resolve_mandate_status_update, mandate_code, mandate_reference, status
             )
 
     return Response(status_code=200)

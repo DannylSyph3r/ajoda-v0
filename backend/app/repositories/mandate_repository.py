@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import MANDATE_TERMINAL_STATUSES
@@ -165,6 +165,25 @@ class MandateRepository:
                 updated_at=datetime.now(timezone.utc),
             )
         )
+
+    async def get_by_code_or_reference(
+        self, mandate_code: str, mandate_reference: str
+    ) -> DirectDebitMandate | None:
+        """Look up a mandate for a webhook delivery, which may identify it by
+        either Monnify's own mandateCode or our mandateReference — the exact
+        field Monnify sends isn't confirmed against a captured payload, so both
+        are tried."""
+        conditions = []
+        if mandate_code:
+            conditions.append(DirectDebitMandate.mandate_code == mandate_code)
+        if mandate_reference:
+            conditions.append(DirectDebitMandate.mandate_reference == mandate_reference)
+        if not conditions:
+            return None
+        result = await self.db.execute(
+            select(DirectDebitMandate).where(or_(*conditions)).limit(1)
+        )
+        return result.scalar_one_or_none()
 
     async def get_with_pending_debit(self) -> list[DirectDebitMandate]:
         """Every mandate with a debit attempt still awaiting resolution — the

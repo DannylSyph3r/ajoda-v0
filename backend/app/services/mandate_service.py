@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.enums import DebitStatus, MandateStatus
+from app.core.enums import MANDATE_ACTIVE_STATUSES, DebitStatus, MandateStatus
 from app.core.exceptions import AppException, BadRequestException, NotFoundException
 from app.models.contribution import Contribution
 from app.models.direct_debit_mandate import DirectDebitMandate
@@ -208,6 +208,76 @@ class MandateService:
                     "Auto-pay cascade notification failed to %s: %s",
                     member.phone_number, exc,
                 )
+
+    # ------------------------------------------------------------------ #
+    # Mandate status webhook (MANDATE_UPDATE)
+    # ------------------------------------------------------------------ #
+    async def resolve_status_update(
+        self, mandate_code: str, mandate_reference: str, status: str
+    ) -> None:
+        """
+        Apply a mandate status change pushed by Monnify's MANDATE_UPDATE webhook —
+        the only way we learn a mandate died on the bank's side (the customer
+        revoked it directly with their bank, or the bank suspended it) rather
+        than through our own cancel(). Without this, a dead mandate keeps
+        getting scheduled for debit every period, silently failing forever.
+        Idempotent: re-applying the same status, or an already-terminal
+        mandate, is a no-op.
+        """
+        valid_statuses = {s.value for s in MandateStatus}
+        if status not in valid_statuses:
+            logger.warning(
+                "Mandate webhook sent unrecognized status %r (code=%s ref=%s) — ignoring",
+                status, mandate_code, mandate_reference,
+            )
+            return
+
+        mandate = await self.mandate_repo.get_by_code_or_reference(
+            mandate_code, mandate_reference
+        )
+        if not mandate:
+            logger.warning(
+                "Mandate webhook for unknown mandate (code=%s ref=%s)",
+                mandate_code, mandate_reference,
+            )
+            return
+
+        if mandate.status == status:
+            return  # already reflects this state
+
+        was_active = mandate.status in MANDATE_ACTIVE_STATUSES
+
+        if status == MandateStatus.CANCELLED.value:
+            await self.mandate_repo.mark_cancelled(
+                mandate.id, "Cancelled directly with the bank (Monnify mandate update)"
+            )
+        else:
+            await self.mandate_repo.update_status(mandate.id, status=status)
+        await self.db.commit()
+
+        # Only notify when the mandate has gone from usable to not — a move
+        # into e.g. PENDING_ACTIVATION isn't something the member needs to act on.
+        if was_active and status not in MANDATE_ACTIVE_STATUSES:
+            member = await self.member_repo.get_by_id(mandate.member_id)
+            if member:
+                coop = await self.coop_repo.get_by_id(mandate.cooperative_id)
+                coop_name = coop.name if coop else "your cooperative"
+                from app.services.whatsapp_service import send_text_message
+
+                try:
+                    await send_text_message(
+                        member.phone_number,
+                        f"⚠️ Your auto-pay mandate for *{coop_name}* was "
+                        f"{status.lower()} by your bank, so it can no longer "
+                        "charge you automatically.\n\n"
+                        "Reply *autopay* to set it up again, or keep paying "
+                        "manually from your payment link.",
+                    )
+                except Exception as exc:  # noqa: BLE001 — notification is best-effort
+                    logger.warning(
+                        "Mandate status-change notification failed to %s: %s",
+                        member.phone_number, exc,
+                    )
 
     # ------------------------------------------------------------------ #
     # Scheduled debit (called from period_service on period open)
