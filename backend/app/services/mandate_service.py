@@ -138,6 +138,16 @@ class MandateService:
             await self.db.commit()
             raise
 
+        if not result.get("authorization_link"):
+            # No link means the member has no way to authorize this mandate
+            # through our current flow — log the full raw response so the
+            # actual required next step (if Monnify sent one) is visible
+            # rather than silently leaving the mandate stuck.
+            logger.warning(
+                "Mandate %s (bank_code=%s) created with no authorization_link — raw: %s",
+                result.get("mandate_code"), bank_code, result.get("raw"),
+            )
+
         await self.mandate_repo.update_status(
             mandate.id,
             status=result["status"] or MandateStatus.INITIATED.value,
