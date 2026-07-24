@@ -25,6 +25,7 @@ from app.services.whatsapp_service import (
 )
 from app.services.withdrawal_service import (
     WithdrawalService,
+    _mask_account,
     match_banks,
     truncate_bank_row_title,
 )
@@ -331,7 +332,7 @@ async def _bank_selected(
         phone,
         f"You're about to send *₦{amount_naira:,}* to:\n\n"
         f"*{verified['account_name']}*\n"
-        f"{bank['name']} · {verified['account_masked']}\n\n"
+        f"{bank['name']} · {_mask_account(verified['account_number'])}\n\n"
         f"Reason: {fd['reason']}\n\n"
         "An OTP will be emailed to the account owner to authorize.",
         [

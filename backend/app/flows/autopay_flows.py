@@ -31,6 +31,7 @@ from app.services.whatsapp_service import (
 )
 from app.services.withdrawal_service import (
     WithdrawalService,
+    _mask_account,
     match_banks,
     truncate_bank_row_title,
 )
@@ -292,7 +293,7 @@ async def _bank_selected(
         phone,
         f"Set up auto-pay of *₦{amount_naira:,}* each period from:\n\n"
         f"*{verified['account_name']}*\n"
-        f"{bank['name']} · {verified['account_masked']}\n\n"
+        f"{bank['name']} · {_mask_account(verified['account_number'])}\n\n"
         "You'll confirm this on your bank's own page next.",
         [
             {"id": "autopay_enable", "title": "✅ Confirm"},
