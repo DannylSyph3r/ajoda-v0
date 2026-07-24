@@ -562,7 +562,11 @@ class MonnifyProvider(PaymentProvider):
         return {
             "status": rb.get("refundStatus", ""),
             "refund_type": rb.get("refundType", ""),
-            "monnify_reference": rb.get("reference", ""),
+            # Confirmed against the docs sample: Monnify doesn't issue a separate
+            # refund-side reference distinct from our own refundReference (unlike
+            # mandates, which get a distinct mandateCode) — there is no "reference"
+            # field on this response, so this is intentionally left unset.
+            "monnify_reference": "",
             "raw": rb,
         }
 
@@ -578,6 +582,6 @@ class MonnifyProvider(PaymentProvider):
         return {
             "status": rb.get("refundStatus", ""),
             "refund_type": rb.get("refundType", ""),
-            "monnify_reference": rb.get("reference", ""),
+            "monnify_reference": "",
             "raw": rb,
         }
