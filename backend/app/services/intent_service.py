@@ -105,6 +105,18 @@ async def route_message(
 
     if message_type == "button":
         button_payload = message_data.get("button_payload", "")
+
+        # Flow-aware button routing — bank selection, when shown as reply
+        # buttons instead of a list (few enough matches to fit in 3). Mirrors
+        # the list_reply row_id handling below; buttons don't carry a row_id
+        # of their own, so the flow's own bank_ prefix does the same job.
+        if (
+            session.current_flow
+            in (ConversationFlow.DISBURSE.value, ConversationFlow.AUTOPAY_ENABLE.value)
+            and button_payload.startswith("bank_")
+        ):
+            return Intent(session.current_flow), {"row_id": button_payload}
+
         return classify_button_intent(button_payload), {}
 
     if message_type == "list":
@@ -140,6 +152,13 @@ async def route_message(
             and row_id.startswith("bank_")
         ):
             return Intent.DISBURSE, {"row_id": row_id}
+
+        # Flow-aware list routing — auto-pay bank selection
+        if (
+            session.current_flow == ConversationFlow.AUTOPAY_ENABLE.value
+            and row_id.startswith("bank_")
+        ):
+            return Intent.AUTOPAY_ENABLE, {"row_id": row_id}
 
         # Standard menu list items (same IDs as buttons)
         return classify_button_intent(row_id), {}

@@ -252,6 +252,23 @@ async def _search_banks(phone: str, svc: WithdrawalService, query: str) -> None:
         )
         return
     shown = matches[:10]
+
+    # 3 or fewer matches (the common case once acronyms resolve to one bank)
+    # fit as reply buttons — a single tap, no extra "Choose Bank" step.
+    if len(shown) <= 3:
+        await send_reply_buttons(
+            phone,
+            "Select your bank:",
+            [
+                {
+                    "id": f"bank_{b['code']}",
+                    "title": truncate_bank_row_title(b["name"] or b["code"], limit=20),
+                }
+                for b in shown
+            ],
+        )
+        return
+
     rows = [
         {"id": f"bank_{b['code']}", "title": truncate_bank_row_title(b["name"] or b["code"])}
         for b in shown
